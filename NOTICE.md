@@ -16,6 +16,6 @@ See `ASSETS.md`.
 
 ## References (Policies)
 - Growtopia / Ubisoft related policy and ownership notes:
-  https://ubisoft-mobile.helpshift.com/hc/en/26-growtopia/
+  [[https://ubisoft-mobile.helpshift.com/hc/en/26-growtopia/]()](https://ubisoft-mobile.helpshift.com/hc/en/26-growtopia/faq/977-ubisoft-has-the-legal-rights-to-every-single-part-of-growtopia/)
 - Ubisoft video/content policy:
   https://www.ubisoft.com/legal/documents/videopolicy
