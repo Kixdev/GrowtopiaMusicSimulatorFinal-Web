@@ -1,6 +1,6 @@
 # Growtopia Music Simulator Final - Web Adaptation
 
-A browser-based (HTML5 Canvas + WebAudio) adaptation of the Growtopia music simulator workflow.
+https://kixnoway.xyz A browser-based (HTML5 Canvas + WebAudio) adaptation of the Growtopia music simulator workflow.
 
 This repository is **open-source for the code** and intentionally does **not** ship any Growtopia/Ubisoft game assets.
 
