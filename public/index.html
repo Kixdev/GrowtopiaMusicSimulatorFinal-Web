@@ -1,0 +1,1261 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+
+    <meta name="title" content="Growtopia Music Simulator Final">
+    <meta name="description" content="Compose & play GMSF songs directly in your browser.">
+    
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://kixnoway.xyz/">
+    <meta property="og:title" content="Growtopia Music Simulator Final">
+    <meta property="og:description" content="Compose & play GMSF songs directly in your browser.">
+    <meta property="og:image" content="https://kixnoway.xyz/og-image.jpg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="Growtopia Music Simulator">
+    <meta name="twitter:description" content="Compose & play GMSF songs directly in your browser.">
+    <meta name="twitter:image" content="https://kixnoway.xyz/og-image.jpg">
+    
+    <link rel="canonical" href="https://kixnoway.xyz/">
+    <link rel="icon" href="/favicon.ico" sizes="any">
+    
+  <link rel="manifest" href="./manifest.webmanifest">
+  <title>GMSF Web by MUSICSTORE GT</title>
+
+  <style>
+    :root{
+
+      --uiScale: 0.78;
+
+      --font: calc(14px * var(--uiScale));
+      --fontSmall: calc(13px * var(--uiScale));
+      --pad: calc(10px * var(--uiScale));
+      --gap: calc(10px * var(--uiScale));
+
+      --btnPadY: calc(8px * var(--uiScale));
+      --btnPadX: calc(10px * var(--uiScale));
+
+      --noteBtn: calc(48px * var(--uiScale));
+      --noteIcon: calc(32px * var(--uiScale));
+    }
+
+    body{
+      margin:0;
+      font-family: system-ui, Arial, sans-serif;
+      background:#f6f6f6;
+      color:#111;
+      font-size: var(--font);
+    }
+
+    header{
+      display:flex;
+      flex-wrap:wrap;
+      gap: calc(8px * var(--uiScale));
+      align-items:center;
+      padding: calc(10px * var(--uiScale));
+      background:#fff;
+      border-bottom:1px solid #ddd;
+      position: sticky;
+      top:0;
+      z-index:10;
+    }
+
+    button, input[type="number"], input[type="text"]{
+      padding: var(--btnPadY) var(--btnPadX);
+      border:1px solid #ccc;
+      border-radius: 12px;
+      background:#fff;
+      font-size: var(--font);
+      line-height: 1.1;
+    }
+
+    button{ cursor:pointer; }
+    button.primary{ background:#111; color:#fff; border-color:#111; }
+    button:disabled{ opacity:.55; cursor:not-allowed; }
+
+    .grow{ flex:1 1 280px; min-width: 240px; }
+
+    #wrap{
+      max-width: 1180px;
+      margin: 0 auto;
+      display:grid;
+      grid-template-columns: minmax(0, 860px) 320px;
+      gap: var(--gap);
+      padding: var(--pad);
+      align-items:start;
+    }
+
+    @media (max-width: 980px){
+      #wrap{
+        grid-template-columns: 1fr;
+        max-width: 820px;
+      }
+      #status{ margin-left: 0; width:100%; }
+    }
+
+    .card{
+      background:#fff;
+      border:1px solid #ddd;
+      border-radius: 16px;
+      padding: var(--pad);
+    }
+
+
+    #cv{
+      width: 100%;
+      max-width: 860px;
+      height: auto;
+      max-height: 62vh;    
+      display:block;
+      border:1px solid #ddd;
+      border-radius: 16px;
+      background:#fff;
+      touch-action: none;
+      margin: 0 auto;
+    }
+
+    .viewbar{
+      margin-top: calc(10px * var(--uiScale));
+      display:flex;
+      flex-direction:column;
+      gap: calc(8px * var(--uiScale));
+    }
+
+    #hud{
+      font-size: var(--font);
+      color:#222;
+      line-height:1.25;
+    }
+
+    .pageButtons{
+      display:flex;
+      gap: calc(8px * var(--uiScale));
+      flex-wrap:wrap;
+    }
+
+    /* ===== Palette ===== */
+    #palette h3{
+      margin:0 0 calc(8px * var(--uiScale)) 0;
+      font-size: var(--font);
+    }
+    .help{
+      color:#555;
+      font-size: var(--fontSmall);
+      line-height:2.35;
+    }
+
+    #paletteGrid{
+      margin-top: calc(10px * var(--uiScale));
+      display:grid;
+      grid-template-columns: repeat(auto-fill, minmax(var(--noteBtn), 1fr));
+      gap: calc(8px * var(--uiScale));
+    }
+
+    .noteBtn{
+      width: var(--noteBtn);
+      height: var(--noteBtn);
+      border:1px solid #ccc;
+      border-radius: 14px;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:#fff;
+      cursor:pointer;
+      position:relative;
+      user-select:none;
+    }
+
+    .noteBtn.selected{
+      outline: 3px solid #111;
+      border-color:#111;
+    }
+
+    .noteBtn img{
+      width: var(--noteIcon);
+      height: var(--noteIcon);
+      image-rendering: pixelated;
+      pointer-events:none;
+    }
+
+    .noteIdTag{
+      display: none !important;
+      position:absolute;
+      bottom:2px;
+      right:4px;
+      font-size: calc(10px * var(--uiScale));
+      color:#555;
+      background:rgba(255,255,255,.85);
+      padding:1px 6px;
+      border-radius: 10px;
+      border:1px solid rgba(0,0,0,.08);
+      pointer-events:none;
+    }
+
+    .kbd{
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      background:#f0f0f0;
+      border:1px solid #ddd;
+      padding:2px 6px;
+      border-radius:10px;
+    }
+
+    #modalBack{
+      position:fixed; inset:0;
+      background:rgba(0,0,0,.35);
+      display:none;
+      align-items:center;
+      justify-content:center;
+      z-index:50;
+      padding: var(--pad);
+    }
+
+    #modal{
+    width: 760px;         
+    max-width: 760px;     
+    max-height: 84vh;      
+    overflow: auto;       
+    background:#fff;
+    border-radius: 16px;
+    border:1px solid #ddd;
+    padding: var(--pad);
+    box-shadow:0 12px 50px rgba(0,0,0,.2);
+    display:flex;
+    gap: var(--gap);
+    flex-wrap: nowrap;     
+    align-items:flex-start;
+    }
+
+    .gearFrame{
+    border-radius: 16px;
+    border:1px solid #ddd;
+    background:#fff;
+    padding: 6px;          
+    overflow: hidden;
+    width: fit-content;
+    }
+
+    #gearCanvas{
+    border-radius: 0;     
+    border: 0;
+    background: transparent;
+    display:block;
+
+    width: 130px;         
+    height: auto;
+    }
+
+    #modalSide{
+    flex: 1 1 auto;
+    min-width: 260px;
+    }
+
+    #gearPaletteGrid{
+    margin-top: calc(10px * var(--uiScale));
+    display:grid;
+    grid-template-columns: repeat(auto-fill, minmax(var(--noteBtn), 1fr));
+    gap: calc(8px * var(--uiScale));
+    max-height: 220px;    
+    overflow: auto;
+    padding-right: 6px;
+    }
+
+    #gearToast{
+      display:none;
+      padding: calc(8px * var(--uiScale)) calc(10px * var(--uiScale));
+      border-radius: 12px;
+      border:1px solid #ddd;
+      background:#111;
+      color:#fff;
+      font-size: var(--fontSmall);
+      width: fit-content;
+      max-width: 520px;
+      margin-top: calc(10px * var(--uiScale));
+    }
+
+    @media (max-width: 480px){
+      :root{ --uiScale: 0.72; }
+      header{ position: static; } 
+      #cv{ max-height: 58vh; }
+    }
+
+    button{
+    transition: transform .08s ease, box-shadow .18s ease, background-color .18s ease, border-color .18s ease, filter .18s ease;
+    box-shadow: 0 6px 18px rgba(0,0,0,.06);
+    }
+    button:hover{ filter: brightness(1.03); box-shadow: 0 10px 26px rgba(0,0,0,.10); }
+    button:active{ transform: translateY(1px) scale(0.99); box-shadow: 0 6px 16px rgba(0,0,0,.08); }
+
+    #btnExport{
+    background: linear-gradient(180deg, rgba(34,197,94,1), rgba(22,163,74,1));
+    border-color: rgba(22,163,74,1);
+    color: #fff;
+    }
+    #btnExport:hover{ filter: brightness(1.05); }
+
+    #btnImport{
+    background: linear-gradient(180deg, rgba(59,130,246,1), rgba(37,99,235,1));
+    border-color: rgba(37,99,235,1);
+    color: #fff;
+    }
+    #btnImport:hover{ filter: brightness(1.05); }
+
+    #btnSelToggle{
+      background: rgba(59,130,246,0.12);
+      color: rgba(29,78,216,1);
+      border: 1px solid rgba(59,130,246,0.45);
+      font-weight: 900;
+    }
+
+    body.sel-on #btnSelToggle{
+    background: linear-gradient(180deg, rgba(168,85,247,1), rgba(126,34,206,1));
+    border-color: rgba(126,34,206,1);
+    color: #fff;
+    box-shadow: 0 14px 34px rgba(126,34,206,.25);
+    }
+
+    body.sel-on #cv{
+    border-color: rgba(126,34,206,.60);
+    box-shadow: 0 18px 44px rgba(126,34,206,.14);
+    }
+
+    body.paste-armed #cv{
+    border-color: rgba(245,158,11,.70);
+    box-shadow: 0 18px 44px rgba(245,158,11,.14);
+    }
+    
+    .gearFrame{
+      width: 160px;          
+      min-width: 160px;      
+      flex: 0 0 160px;       
+    }
+    
+    #gearCanvas{
+      width: 160px;
+      height: 448px;
+      image-rendering: pixelated;
+    }
+    
+    #modalBack{
+      overflow: auto;
+    }
+
+    *{
+      -webkit-tap-highlight-color: transparent;
+    }
+    
+    button:focus,
+    button:active{
+      outline: none;
+    }
+    
+    button:focus:not(:focus-visible){
+      outline: none;
+      box-shadow: none;
+    }
+    
+    button:focus-visible{
+      outline: 2px solid rgba(99,102,241,.55);
+      outline-offset: 2px;
+      box-shadow: 0 0 0 4px rgba(99,102,241,.18);
+      border-radius: 12px;
+    }
+    
+    html.modal-open,
+    body.modal-open{
+      overflow: hidden;
+      height: 100%;
+    }
+    
+    body.modal-open{
+      position: fixed;
+      width: 100%;
+      left: 0;
+      right: 0;
+      top: var(--scroll-lock-top, 0px);
+    }
+    
+    .modalOverlay, .modalBackdrop{
+      overscroll-behavior: none;
+    }
+    
+    .modalContent, .modalBody{
+      max-height: calc(100vh - 120px);
+      overflow: auto;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+
+    
+    /* Light default */
+    .statCard{
+      border-radius: 16px;
+      padding: 12px 14px;
+      background: rgba(255,255,255,0.70);
+      border: 1px solid rgba(15,23,42,0.12);
+      box-shadow: 0 10px 30px rgba(2,6,23,0.08);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    
+    .statCard .k{
+      font-size: 12px;
+      line-height: 1.35;
+      color: rgba(15,23,42,.68);
+    }
+    
+    .statCard .v{
+      margin: 6px 0;
+      font-weight: 900;
+      font-size: 20px;
+      letter-spacing: .2px;
+      color: rgba(2,6,23,.92);
+    }
+    
+    /* Dark override */
+    html[data-ui-theme="dark"] .statCard{
+      background: rgba(15,23,42,0.55);
+      border-color: rgba(148,163,184,0.18);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+    }
+    
+    html[data-ui-theme="dark"] .statCard .k{
+      color: rgba(148,163,184,.82);
+    }
+    
+    html[data-ui-theme="dark"] .statCard .v{
+      color: rgba(226,232,240,.95);
+    }
+
+
+    .hudRow{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap: nowrap;
+      min-width: 0;
+    }
+    
+    #hud{
+      flex: 0 0 auto;       
+      white-space: nowrap;  
+    }
+    
+    #status{
+      flex: 1 1 auto;      
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 12px;
+      opacity: .75;
+    }
+    
+    @media (max-width: 520px){
+      #hud{ font-size: 12px; }
+      #status{ font-size: 11px; }
+    }
+
+    #wrap{
+      display:flex;        
+      gap: 12px;            
+    }
+    
+    @media (max-width: 860px){
+      #wrap{
+        flex-direction: column; 
+      }
+    
+      #rightCard{
+        order: -1;               
+      }
+    
+      #leftCard{
+        order: 0;                
+      }
+    
+      #rightCard{
+        max-height: 42vh;
+        overflow: auto;
+      }
+    }
+
+    #btnLibrary{
+      background: rgba(99,102,241,.12);
+      color: rgb(160 153 247);
+      border: 1px solid rgba(99,102,241,.35);
+      font-weight: 900;
+    }
+    
+    :root{
+      /* core */
+      --ui-text: #0b1020;
+      --ui-text-soft: rgba(11,16,32,.82);
+      --ui-muted: rgba(11,16,32,.62);
+    
+      --ui-bg-a: #f6f6f6;
+      --ui-bg-b: #eef2ff;
+    
+      --ui-surface: rgba(255,255,255,.86);
+      --ui-card: rgba(255,255,255,.90);
+      --ui-canvas: rgba(255,255,255,.95);
+    
+      --ui-border: rgba(0,0,0,.10);
+      --ui-border-soft: rgba(0,0,0,.14);
+    
+      /* primary buttons */
+      --ui-primary-bg: #111;
+      --ui-primary-text: #fff;
+      --ui-primary-border: #111;
+    
+      /* space accents (light) */
+      --ui-aurora-a: rgba(99,102,241,.18);
+      --ui-aurora-b: rgba(168,85,247,.14);
+      --ui-stars: rgba(17,24,39,.18);
+    
+      /* chips */
+      --ui-chip-bg: rgba(99,102,241,.12);
+      --ui-chip-text: rgba(67,56,202,1);
+      --ui-chip-border: rgba(99,102,241,.35);
+    
+      /* tabs */
+      --ui-tab-active-bg: rgba(17,17,17,.08);
+    
+      /* shadows */
+      --ui-shadow: 0 10px 30px rgba(0,0,0,.10);
+      --ui-card-shadow: 0 18px 50px rgba(0,0,0,.08);
+      --ui-btn-shadow: 0 8px 22px rgba(0,0,0,.08);
+      --ui-btn-shadow-hover: 0 14px 36px rgba(0,0,0,.12);
+    
+      --ui-focus: rgba(99,102,241,.55);
+      --ui-focus-soft: rgba(99,102,241,.18);
+    
+      /* misc */
+      --ui-kbd-bg: rgba(0,0,0,.05);
+      --ui-kbd-border: rgba(0,0,0,.10);
+      --ui-kbd-text: rgba(11,16,32,.85);
+      --ui-outline: rgba(17,17,17,.90);
+    
+      --ui-modal-backdrop: rgba(0,0,0,.45);
+    }
+    
+    html[data-ui-theme="dark"]{
+      --ui-text: rgba(242,246,255,.96);
+      --ui-text-soft: rgba(242,246,255,.82);
+      --ui-muted: rgba(242,246,255,.62);
+    
+      --ui-bg-a: #030413;
+      --ui-bg-b: #080a2a;
+    
+      --ui-surface: rgba(10,14,36,.60);
+      --ui-card: rgba(10,14,36,.66);
+      --ui-canvas: rgba(10,14,36,.72);
+    
+      --ui-border: rgba(255,255,255,.12);
+      --ui-border-soft: rgba(255,255,255,.14);
+    
+      /* primary buttons (space glow) */
+      --ui-primary-bg: rgba(99,102,241,.18);
+      --ui-primary-text: rgba(242,246,255,.95);
+      --ui-primary-border: rgba(99,102,241,.42);
+    
+      /* space accents (dark) */
+      --ui-aurora-a: rgba(99,102,241,.26);
+      --ui-aurora-b: rgba(168,85,247,.22);
+      --ui-stars: rgba(255,255,255,.18);
+    
+      /* chips */
+      --ui-chip-bg: rgba(99,102,241,.16);
+      --ui-chip-text: rgba(224,231,255,.98);
+      --ui-chip-border: rgba(99,102,241,.40);
+    
+      --ui-tab-active-bg: rgba(255,255,255,.10);
+    
+      --ui-shadow: 0 16px 60px rgba(0,0,0,.45);
+      --ui-card-shadow: 0 22px 70px rgba(0,0,0,.45);
+      --ui-btn-shadow: 0 12px 40px rgba(0,0,0,.40);
+      --ui-btn-shadow-hover: 0 18px 60px rgba(0,0,0,.55);
+    
+      --ui-kbd-bg: rgba(255,255,255,.06);
+      --ui-kbd-border: rgba(255,255,255,.12);
+      --ui-kbd-text: rgba(242,246,255,.86);
+    
+      --ui-outline: rgba(242,246,255,.88);
+      --ui-modal-backdrop: rgba(0,0,0,.60);
+    }
+    
+    html{
+      color-scheme: light dark;
+    }
+    
+    body{
+      background:
+        radial-gradient(1200px 900px at 12% -10%, var(--ui-aurora-a), transparent 60%),
+        radial-gradient(900px 700px at 90% 8%, var(--ui-aurora-b), transparent 55%),
+        linear-gradient(180deg, var(--ui-bg-a), var(--ui-bg-b));
+      color: var(--ui-text);
+    }
+    
+    /* Stars + subtle nebula (fixed, non-blocking) */
+    body::before,
+    body::after{
+      content:"";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: -1;
+    }
+    
+    body::before{
+      opacity: .9;
+      background-image:
+        radial-gradient(circle at 10% 20%, var(--ui-stars) 0 1px, transparent 2px),
+        radial-gradient(circle at 40% 60%, var(--ui-stars) 0 1px, transparent 2px),
+        radial-gradient(circle at 70% 30%, var(--ui-stars) 0 1px, transparent 2px),
+        radial-gradient(circle at 85% 75%, var(--ui-stars) 0 1px, transparent 2px),
+        radial-gradient(circle at 22% 78%, var(--ui-stars) 0 1px, transparent 2px);
+      background-size: 240px 240px, 280px 280px, 320px 320px, 360px 360px, 400px 400px;
+      background-repeat: repeat;
+      filter: blur(.1px);
+    }
+    
+    body::after{
+      opacity: .45;
+      background-image:
+        radial-gradient(1000px 700px at 18% 88%, rgba(56,189,248,.10), transparent 60%),
+        radial-gradient(900px 650px at 88% 78%, rgba(34,197,94,.08), transparent 60%),
+        radial-gradient(800px 600px at 78% 18%, rgba(244,114,182,.10), transparent 60%);
+    }
+    
+    header{
+      background: var(--ui-surface);
+      border-bottom: 1px solid var(--ui-border);
+      box-shadow: var(--ui-shadow);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    
+    .card{
+      background: var(--ui-card);
+      border: 1px solid var(--ui-border);
+      box-shadow: var(--ui-card-shadow);
+    }
+    
+    #cv{
+      background: var(--ui-canvas);
+      border: 1px solid var(--ui-border);
+    }
+    
+    /* text */
+    #hud{ color: var(--ui-text); }
+    .help{ color: var(--ui-muted); }
+    #status{ color: var(--ui-muted); }
+    
+    /* inputs + buttons (default) */
+    button, input[type="number"], input[type="text"]{
+      border-color: var(--ui-border-soft);
+      background: var(--ui-surface);
+      color: var(--ui-text);
+    }
+    
+    button{
+      box-shadow: var(--ui-btn-shadow);
+    }
+    
+    button:hover{
+      box-shadow: var(--ui-btn-shadow-hover);
+    }
+    
+    button.primary{
+      background: var(--ui-primary-bg);
+      color: var(--ui-primary-text);
+      border-color: var(--ui-primary-border);
+    }
+    
+
+    #hkBody{
+      display:flex;
+      flex-direction:column;
+      gap:14px;
+    }
+    
+    /* section card */
+    #hkBody .hkSection{
+      border-radius: 16px;
+      padding: 12px 12px;
+      background: rgba(255,255,255,.70);
+      border: 1px solid rgba(15,23,42,.12);
+      box-shadow: 0 10px 30px rgba(2,6,23,.08);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+
+    #hkBody .hkTitle{
+      display:flex;
+      align-items:baseline;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom: 10px;
+      font-weight: 900;
+      color: rgba(2,6,23,.92);
+    }
+
+    #hkBody .hkGrid{
+      display:grid;
+      grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+      gap: 10px;
+    }
+
+    #hkBody .hkBtn{
+      position:relative;
+      border-radius: 14px;
+      padding: 10px;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      justify-content:center;
+      gap:8px;
+    
+      background: rgba(2,6,23,.04);
+      border: 1px solid rgba(15,23,42,.12);
+      box-shadow: 0 8px 20px rgba(2,6,23,.06);
+    
+      transition: transform .12s ease, filter .12s ease, border-color .12s ease, background .12s ease;
+      cursor: pointer;
+      user-select:none;
+    }
+    
+    #hkBody .hkBtn:hover{
+      transform: translateY(-1px);
+      filter: brightness(1.03);
+      border-color: rgba(99,102,241,.35);
+    }
+    #hkBody .hkBtn:active{
+      transform: translateY(0px) scale(.98);
+    }
+    
+    /* icon */
+    #hkBody .hkBtn img{
+      width: 38px;
+      height: 38px;
+      object-fit: contain;
+      image-rendering: auto;
+    }
+
+    #hkBody .hkTag{
+      font-size: 12px;
+      font-weight: 900;
+      line-height: 1;
+      padding: 6px 9px;
+      border-radius: 999px;
+    
+      background: rgba(99,102,241,.12);
+      border: 1px solid rgba(99,102,241,.30);
+      color: rgba(67,56,202,1);
+    }
+    
+    /* =========================
+       DARK MODE OVERRIDES
+       ========================= */
+    html[data-ui-theme="dark"] #hkBody .hkSection{
+      background: rgba(15,23,42,.55);
+      border-color: rgba(148,163,184,.18);
+      box-shadow: 0 12px 40px rgba(0,0,0,.35);
+    }
+    
+    html[data-ui-theme="dark"] #hkBody .hkTitle{
+      color: rgba(226,232,240,.95);
+    }
+    
+    html[data-ui-theme="dark"] #hkBody .hkBtn{
+      background: rgba(148,163,184,.10);
+      border-color: rgba(148,163,184,.18);
+      box-shadow: 0 10px 26px rgba(0,0,0,.30);
+    }
+    
+    html[data-ui-theme="dark"] #hkBody .hkBtn:hover{
+      border-color: rgba(99,102,241,.44);
+      background: rgba(99,102,241,.10);
+    }
+    
+    html[data-ui-theme="dark"] #hkBody .hkTag{
+      background: rgba(99,102,241,.18);
+      border-color: rgba(99,102,241,.44);
+      color: rgba(224,231,255,.98);
+    }
+    
+    #hotkeyHint{
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-radius: 16px;
+    
+      background: rgba(255,255,255,.70);
+      border: 1px solid rgba(15,23,42,.12);
+      box-shadow: 0 10px 30px rgba(2,6,23,.08);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    
+      color: rgba(15,23,42,.76);
+      font-size: 12px;
+      line-height: 1.45;
+    }
+    
+    #hotkeyHint b{
+      color: rgba(2,6,23,.92);
+      font-weight: 900;
+    }
+    
+    html[data-ui-theme="dark"] #hotkeyHint{
+      background: rgba(15,23,42,.55);
+      border-color: rgba(148,163,184,.18);
+      box-shadow: 0 12px 40px rgba(0,0,0,.35);
+      color: rgba(148,163,184,.86);
+    }
+    
+    html[data-ui-theme="dark"] #hotkeyHint b{
+      color: rgba(226,232,240,.95);
+    }
+    
+    
+    .noteBtn.selected{
+      outline: 3px solid var(--ui-outline);
+      border-color: var(--ui-outline);
+    }
+    
+    .kbd{
+      background: var(--ui-kbd-bg);
+      border-color: var(--ui-kbd-border);
+      color: var(--ui-kbd-text);
+    }
+    
+    /* modal */
+    #modalBack{
+      background: var(--ui-modal-backdrop);
+    }
+    #modal{
+      background: var(--ui-card);
+      border-color: var(--ui-border);
+      color: var(--ui-text);
+    }
+    .gearFrame{
+      background: var(--ui-card);
+      border-color: var(--ui-border);
+    }
+    #gearToast{
+      background: rgba(0,0,0,.88);
+      border-color: rgba(255,255,255,.10);
+      color: rgba(255,255,255,.92);
+    }
+    
+    html[data-ui-theme="dark"] #songSetBack > div{
+      background: var(--ui-card) !important;
+      border-color: var(--ui-border) !important;
+      color: var(--ui-text) !important;
+    }
+    html[data-ui-theme="dark"] #songSetBack input{
+      background: var(--ui-surface) !important;
+      border-color: var(--ui-border-soft) !important;
+      color: var(--ui-text) !important;
+    }
+    html[data-ui-theme="dark"] #songSetApply{
+      background: var(--ui-primary-bg) !important;
+      color: var(--ui-primary-text) !important;
+      border-color: var(--ui-primary-border) !important;
+    }
+
+    html[data-ui-theme="dark"] #btnZoom,
+    html[data-ui-theme="dark"] #btnSelToggle{
+      background: rgba(99,102,241,.16) !important;
+      color: rgba(224,231,255,.98) !important;
+      border-color: rgba(99,102,241,.44) !important;
+    }
+    html[data-ui-theme="dark"] #btnReset{
+      background: rgba(239, 68, 68, 0.14) !important;
+      color: rgba(254, 226, 226, 0.96) !important;
+      border-color: rgba(239, 68, 68, 0.42) !important;
+    }
+    
+    #songLibList{
+      display:flex;
+      flex-direction:column;
+      gap:10px;
+      padding:10px;
+      background: transparent;
+    }
+    
+    #songLibList .songItem{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+      padding:12px 14px;
+      border-radius:16px;
+    
+      /* Light (space-glass) */
+      background: rgba(255,255,255,0.70);
+      border: 1px solid rgba(15,23,42,0.12);
+      box-shadow: 0 10px 30px rgba(2,6,23,0.08);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    
+    #songLibList .songInfo{ min-width:0; }
+    #songLibList .songTitle{
+      font-weight:900;
+      letter-spacing:.2px;
+      color: rgba(2,6,23,.92);
+      margin-bottom:6px;
+      line-height:1.2;
+      word-break: break-word;
+    }
+    #songLibList .songMeta{
+      font-size: 12px;
+      line-height:1.35;
+      color: rgba(15,23,42,.68);
+      white-space: pre-line; 
+      word-break: break-word;
+    }
+    
+    #songLibList .songBtns{ display:flex; gap:8px; flex-shrink:0; }
+    
+    /* Button base */
+    #songLibList .songBtn{
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-weight: 900;
+      border: 1px solid rgba(59,130,246,0.35);
+      background: rgba(59,130,246,0.12);
+      color: rgba(29,78,216,1);
+      cursor:pointer;
+      transition: transform .15s ease, filter .15s ease, background .15s ease, border-color .15s ease;
+    }
+    #songLibList .songBtn:hover{ transform: translateY(-1px); filter: brightness(1.05); }
+    #songLibList .songBtn:active{ transform: translateY(0px) scale(.98); }
+    #songLibList .songBtn:focus-visible{
+      outline: 2px solid rgba(59,130,246,0.55);
+      outline-offset: 2px;
+    }
+
+    #songLibList .songBtn.primary{
+      border-color: rgba(99,102,241,.44);
+      background: rgba(99,102,241,.16);
+      color: rgba(29,78,216,1);
+    }
+    
+    /* === DARK MODE OVERRIDES === */
+    html[data-ui-theme="dark"] #songLibList .songItem{
+      background: rgba(15,23,42,0.55);
+      border-color: rgba(148,163,184,0.18);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.35);
+    }
+    
+    html[data-ui-theme="dark"] #songLibList .songTitle{
+      color: rgba(226,232,240,.95);
+    }
+    
+    html[data-ui-theme="dark"] #songLibList .songMeta{
+      color: rgba(148,163,184,.82);
+    }
+    
+    html[data-ui-theme="dark"] #songLibList .songBtn{
+      background: rgba(99,102,241,.16);
+      color: rgba(224,231,255,.98);
+      border-color: rgba(99,102,241,.44);
+    }
+    
+    html[data-ui-theme="dark"] #songLibList .songBtn.primary{
+      background: rgba(99,102,241,.22);
+      border-color: rgba(99,102,241,.52);
+    }
+    
+
+    #btnUIMode{
+      border-radius: 999px;
+      font-weight: 900;
+      letter-spacing: .2px;
+      background: var(--ui-chip-bg);
+      color: var(--ui-chip-text);
+      border: 1px solid var(--ui-chip-border);
+      box-shadow: var(--ui-btn-shadow);
+    }
+    
+    #btnTheme{
+      background: var(--ui-chip-bg) !important;
+      color: var(--ui-chip-text) !important;
+      border-color: var(--ui-chip-border) !important;
+    }
+    
+    button:focus-visible,
+    input:focus-visible{
+      outline: 2px solid var(--ui-focus);
+      outline-offset: 2px;
+      box-shadow: 0 0 0 4px var(--ui-focus-soft);
+    }
+    
+    @media (prefers-reduced-motion: reduce){
+      *{ scroll-behavior:auto !important; }
+      button{ transition:none !important; }
+    }
+    
+    #exportWavOverlay{
+      position: fixed;
+      inset: 0;
+      z-index: 999999;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(2,6,23,.72);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+    #exportWavOverlay.show{ display:flex; }
+    
+    #exportWavOverlay .box{
+      width: min(460px, 92vw);
+      border-radius: 20px;
+      padding: 16px 16px 14px;
+      background: rgba(15,23,42,.62);
+      border: 1px solid rgba(148,163,184,.22);
+      box-shadow: 0 20px 60px rgba(0,0,0,.45);
+      color: rgba(226,232,240,.92);
+    }
+    
+    #exportWavOverlay .title{
+      font-weight: 900;
+      font-size: 15px;
+      letter-spacing: .2px;
+      display:flex;
+      align-items:center;
+      gap:10px;
+    }
+    #exportWavOverlay .spinner{
+      width: 14px; height: 14px;
+      border-radius: 999px;
+      border: 2px solid rgba(148,163,184,.25);
+      border-top-color: rgba(99,102,241,.9);
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin{ to{ transform: rotate(360deg); } }
+    
+    #exportWavOverlay .desc{
+      margin-top: 6px;
+      font-size: 12px;
+      color: rgba(148,163,184,.90);
+      line-height: 1.45;
+    }
+    
+    #exportWavOverlay .barWrap{
+      margin-top: 12px;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(148,163,184,.14);
+      overflow: hidden;
+      border: 1px solid rgba(148,163,184,.18);
+    }
+    #exportWavOverlay .bar{
+      height: 100%;
+      width: 0%;
+      border-radius: 999px;
+      background: rgba(99,102,241,.75);
+      transition: width .12s ease;
+    }
+    
+    #exportWavOverlay.indeterminate .bar{
+      width: 35%;
+      animation: indet 1.0s ease-in-out infinite;
+    }
+    @keyframes indet{
+      0%   { transform: translateX(-10%); }
+      50%  { transform: translateX(180%); }
+      100% { transform: translateX(-10%); }
+    }
+
+
+  </style>
+</head>
+
+<body>
+<header>
+  <button id="btnExport">Export .GMSF</button>
+  <button id="btnImport">Import .GMSF</button>
+  <button id="btnLength" type="button" title="Set song length">Length</button>
+
+  <input id="fileImport" type="file" accept=".gmsf,.GMSF,.gtmusic,.AngryLegGuy,.mylegguy" hidden>
+
+  <label> BPM:
+    <input id="inpBpm" type="number" min="1" max="32766" value="100" style="width:40px">
+  </label>
+
+  <label> Master Vol:
+    <input id="inpVol" type="number" min="0" max="100" value="30" style="width:40px">
+  </label>
+
+  <label class="grow"> Metadata:
+    <input id="inpMeta" type="text" placeholder="Song metadata (max 255 bytes)" style="width:22%">
+  </label>
+
+  <button id="btnUIMode" type="button" title="Toggle Light/Dark"></button>
+
+</header>
+
+<div id="wrap">
+  <!-- LEFT -->
+  <div class="card" id="leftCard">
+    <canvas id="cv" width="832" height="480"></canvas>
+
+    <div class="viewbar">
+        <div class="hudRow">
+          <div id="hud"></div>
+          <span id="status"></span>
+        </div>
+
+      <div class="pageButtons">
+        <button id="btnZoom" type="button" title="Toggle zoom"
+          style="
+            background: rgba(59,130,246,0.12);
+            color: rgba(29,78,216,1);
+            border: 1px solid rgba(59,130,246,0.45);
+            font-weight: 900;
+          "
+        >Zoom: OFF</button>
+        <button id="btnPrevPage">◀ Prev Page</button>
+        <button id="btnNextPage">Next Page ▶</button>
+        <button id="btnPlay" class="primary">Play</button>
+        <button id="btnPause" disabled>Pause</button>
+        <button id="btnUndo">Undo</button>
+        <button id="btnRedo">Redo</button>
+        <button id="btnAudioConvert" type="button"></button>
+        <button
+          id="btnReset"
+          type="button"
+          title="Clear all notes"
+          style="
+            background: rgba(239, 68, 68, 0.12);
+            color: rgba(185, 28, 28, 1);
+            border: 1px solid rgba(239, 68, 68, 0.45);
+            font-weight: 900;
+          "
+        >
+          Reset
+        </button>
+        <button id="btnSelToggle">SELECTION : OFF</button>
+        <button id="btnSelCopy" disabled>Copy</button>
+        <button id="btnSelPaste" disabled>Paste</button>
+        <button id="btnSave">Save</button>
+        <button id="btnHotkeys">Hotkey</button>
+        <button id="btnLibrary" type="button" title="Open Public Song Library">
+          Public Song Library
+        </button>
+      </div>
+    </div>
+  </div>
+
+    <!-- RIGHT -->
+    <div class="card" id="rightCard">
+    <h3>Sheet Music</h3>
+    <div class="help">
+        Hotkeys:
+        <span class="kbd">Space</span> Play/Stop,
+        <span class="kbd">P</span> Pause/Resume,
+        <span class="kbd">←</span>/<span class="kbd">→</span> Page,
+        <span class="kbd">Ctrl+S</span> Save (overwrite),
+        <span class="kbd">Ctrl+Z</span> Undo,
+        <span class="kbd">Ctrl+Y</span> Redo,
+        <span class="kbd">Ctrl+O</span> Import,
+        <span class="kbd">B</span> Back (Audio Gear / Rack).
+    </div>
+    <div id="paletteGrid"></div>
+    </div>
+    </div>
+
+<div id="songSetBack" style="
+  position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+  background:rgba(0,0,0,.35); z-index:120; padding:12px;
+">
+  <div style="
+    width:min(420px, 96vw);
+    background:#fff; border-radius:16px; border:1px solid rgba(0,0,0,.12);
+    box-shadow:0 16px 60px rgba(0,0,0,.25);
+    padding:12px;
+  ">
+    <div style="display:flex; align-items:center; justify-content:space-between; gap:10px;">
+      <div style="font-weight:900;">Song Settings</div>
+      <button id="songSetClose" type="button">✕</button>
+    </div>
+
+    <div style="margin-top:10px; display:grid; gap:10px;">
+      <label style="display:grid; gap:6px; font-weight:700;">
+        Length (max 5000)
+        <input id="songSetWidth" type="number" min="25" max="5000" value="400" style="padding:8px;border-radius:10px;border:1px solid #ccc;">
+      </label>
+
+      <label style="display:grid; gap:6px; font-weight:700;">
+        BPM
+        <input id="songSetBpm" type="number" min="1" max="32766" value="100" style="padding:8px;border-radius:10px;border:1px solid #ccc;">
+      </label>
+    </div>
+
+    <div style="margin-top:12px; display:flex; gap:10px; justify-content:flex-end;">
+      <button id="songSetCancel" type="button">Cancel</button>
+      <button id="songSetApply" type="button" style="background:#111;color:#fff;border:1px solid #111;border-radius:12px;padding:8px 12px;font-weight:900;">
+        Apply
+      </button>
+    </div>
+  </div>
+</div>
+
+<div id="modalBack">
+  <div id="modal">
+    <div class="gearFrame">
+      <canvas id="gearCanvas" width="160" height="448"></canvas>
+        <div style="margin-top:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+          <input id="gearCodeInput" type="text" placeholder="Paste Audio Code…"
+            style="
+              flex:1; min-width: 100px;
+              padding:8px 10px;
+              border:1px solid rgba(0,0,0,.18);
+              border-radius:12px;
+              font-family: ui-monospace, Menlo, monospace;
+              font-size:12px;
+            ">
+          <button id="gearCodeApply" type="button" class="primary">Update</button>
+          <button id="gearCodeClear" type="button">Clear</button>
+        </div>
+      <div style="display:flex; gap:8px; margin-top:10px; flex-wrap:wrap;">
+        <button id="gearDone" class="primary">Done</button>
+        <button id="gearCancel">Cancel</button>
+      </div>
+    </div>
+
+    <div id="modalSide">
+      <h3>Audio Gear / Rack Editor </h3>
+
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <label>Gear Volume:
+          <input id="gearVol" type="number" min="1" max="100" value="100" style="width:92px">
+        </label>
+      </div>
+
+      <div style="margin-top:10px;">
+        <div style="font-weight:700;margin-bottom:4px">Gear Code</div>
+        <div id="gearCode" class="kbd" style="display:inline-block;font-size:16px; padding:6px 10px;">NoData</div>
+        <div id="gearVolText" class="kbd" style="display:inline-block;font-size:16px; padding:6px 10px; margin-left:8px;">Vol: 100</div>
+        <div id="gearToast"></div>
+      </div>
+
+      <div class="help" style="margin-top:10px;">
+        Click Gear Code to copy. Click Vol to copy the volume value. Hotkey “B” to go back.
+      </div>
+
+      <div id="gearPaletteGrid"></div>
+    </div>
+  </div>
+</div>
+<script type="module" src="./app.js"></script>
+</body>
+</html>
