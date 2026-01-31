@@ -1,4 +1,9 @@
-// notePack.js
+/*
+  SPDX-License-Identifier: GPL-3.0-or-later
+  Copyright (c) 2026 KixDev
+  See LICENSE for details.
+*/
+
 export const AUDIOGEARSPACE = 5;
 
 export const NOTE_PACK = {
@@ -127,3 +132,4 @@ triple("assets/Proprietary/Sound/mexican_trumpet_%d.wav", 32,
 );
 
 NOTE_PACK.maxNoteId = Math.max(...Object.keys(NOTE_PACK.notes).map(Number));
+
