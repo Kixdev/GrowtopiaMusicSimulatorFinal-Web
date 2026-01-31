@@ -14,7 +14,7 @@ Reference upstream release/source:
   https://github.com/ideal-fire/GrowtopiaMusicSimulatorFinal
 
 ## Web Adaptation
-- KixDev — Website Version
+- KixDev - Website Version
 
 ## Additional Notes
 - Some images and sounds commonly associated with Growtopia may be owned by Ubisoft/Growtopia.
