@@ -1,3 +1,9 @@
+/*
+  SPDX-License-Identifier: GPL-3.0-or-later
+  Copyright (c) 2026 KixDev
+  See LICENSE for details.
+*/
+
 import { NOTE_PACK, AUDIOGEARSPACE } from "./notePack.js";
 import { parseGmsfV1, writeGmsfV1, download } from "./gmsf.js";
 
