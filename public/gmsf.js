@@ -1,4 +1,9 @@
-// gmsf.js
+/*
+  SPDX-License-Identifier: GPL-3.0-or-later
+  Copyright (c) 2026 KixDev
+  See LICENSE for details.
+*/
+
 import { AUDIOGEARSPACE } from "./notePack.js";
 
 function ascii(u8, off, len) {
@@ -117,3 +122,4 @@ export function download(bytes, filename = "song.GMSF") {
   a.click();
   URL.revokeObjectURL(url);
 }
+
