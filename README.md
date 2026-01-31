@@ -1,4 +1,4 @@
-# Growtopia Music Simulator Final — Web Adaptation
+# Growtopia Music Simulator Final - Web Adaptation
 
 A browser-based (HTML5 Canvas + WebAudio) adaptation of the Growtopia music simulator workflow.
 
