@@ -138,7 +138,6 @@
       flex-wrap:wrap;
     }
 
-    /* ===== Palette ===== */
     #palette h3{
       margin:0 0 calc(8px * var(--uiScale)) 0;
       font-size: var(--font);
@@ -390,8 +389,6 @@
       -webkit-overflow-scrolling: touch;
     }
 
-    
-    /* Light default */
     .statCard{
       border-radius: 16px;
       padding: 12px 14px;
@@ -416,7 +413,6 @@
       color: rgba(2,6,23,.92);
     }
     
-    /* Dark override */
     html[data-ui-theme="dark"] .statCard{
       background: rgba(15,23,42,0.55);
       border-color: rgba(148,163,184,0.18);
@@ -492,7 +488,6 @@
     }
     
     :root{
-      /* core */
       --ui-text: #0b1020;
       --ui-text-soft: rgba(11,16,32,.82);
       --ui-muted: rgba(11,16,32,.62);
@@ -507,25 +502,20 @@
       --ui-border: rgba(0,0,0,.10);
       --ui-border-soft: rgba(0,0,0,.14);
     
-      /* primary buttons */
       --ui-primary-bg: #111;
       --ui-primary-text: #fff;
       --ui-primary-border: #111;
     
-      /* space accents (light) */
       --ui-aurora-a: rgba(99,102,241,.18);
       --ui-aurora-b: rgba(168,85,247,.14);
       --ui-stars: rgba(17,24,39,.18);
     
-      /* chips */
       --ui-chip-bg: rgba(99,102,241,.12);
       --ui-chip-text: rgba(67,56,202,1);
       --ui-chip-border: rgba(99,102,241,.35);
     
-      /* tabs */
       --ui-tab-active-bg: rgba(17,17,17,.08);
     
-      /* shadows */
       --ui-shadow: 0 10px 30px rgba(0,0,0,.10);
       --ui-card-shadow: 0 18px 50px rgba(0,0,0,.08);
       --ui-btn-shadow: 0 8px 22px rgba(0,0,0,.08);
@@ -534,7 +524,6 @@
       --ui-focus: rgba(99,102,241,.55);
       --ui-focus-soft: rgba(99,102,241,.18);
     
-      /* misc */
       --ui-kbd-bg: rgba(0,0,0,.05);
       --ui-kbd-border: rgba(0,0,0,.10);
       --ui-kbd-text: rgba(11,16,32,.85);
@@ -551,24 +540,21 @@
       --ui-bg-a: #030413;
       --ui-bg-b: #080a2a;
     
-      --ui-surface: rgba(10,14,36,.60);
+      --ui-surface: rgb(10 14 36 / 89%); 
       --ui-card: rgba(10,14,36,.66);
       --ui-canvas: rgba(10,14,36,.72);
     
       --ui-border: rgba(255,255,255,.12);
       --ui-border-soft: rgba(255,255,255,.14);
     
-      /* primary buttons (space glow) */
       --ui-primary-bg: rgba(99,102,241,.18);
       --ui-primary-text: rgba(242,246,255,.95);
       --ui-primary-border: rgba(99,102,241,.42);
     
-      /* space accents (dark) */
       --ui-aurora-a: rgba(99,102,241,.26);
       --ui-aurora-b: rgba(168,85,247,.22);
       --ui-stars: rgba(255,255,255,.18);
     
-      /* chips */
       --ui-chip-bg: rgba(99,102,241,.16);
       --ui-chip-text: rgba(224,231,255,.98);
       --ui-chip-border: rgba(99,102,241,.40);
@@ -600,7 +586,6 @@
       color: var(--ui-text);
     }
     
-    /* Stars + subtle nebula (fixed, non-blocking) */
     body::before,
     body::after{
       content:"";
@@ -650,12 +635,10 @@
       border: 1px solid var(--ui-border);
     }
     
-    /* text */
     #hud{ color: var(--ui-text); }
     .help{ color: var(--ui-muted); }
     #status{ color: var(--ui-muted); }
     
-    /* inputs + buttons (default) */
     button, input[type="number"], input[type="text"]{
       border-color: var(--ui-border-soft);
       background: var(--ui-surface);
@@ -683,7 +666,6 @@
       gap:14px;
     }
     
-    /* section card */
     #hkBody .hkSection{
       border-radius: 16px;
       padding: 12px 12px;
@@ -738,7 +720,6 @@
       transform: translateY(0px) scale(.98);
     }
     
-    /* icon */
     #hkBody .hkBtn img{
       width: 38px;
       height: 38px;
@@ -758,9 +739,6 @@
       color: rgba(67,56,202,1);
     }
     
-    /* =========================
-       DARK MODE OVERRIDES
-       ========================= */
     html[data-ui-theme="dark"] #hkBody .hkSection{
       background: rgba(15,23,42,.55);
       border-color: rgba(148,163,184,.18);
@@ -832,7 +810,6 @@
       color: var(--ui-kbd-text);
     }
     
-    /* modal */
     #modalBack{
       background: var(--ui-modal-backdrop);
     }
@@ -895,7 +872,6 @@
       padding:12px 14px;
       border-radius:16px;
     
-      /* Light (space-glass) */
       background: rgba(255,255,255,0.70);
       border: 1px solid rgba(15,23,42,0.12);
       box-shadow: 0 10px 30px rgba(2,6,23,0.08);
@@ -922,7 +898,6 @@
     
     #songLibList .songBtns{ display:flex; gap:8px; flex-shrink:0; }
     
-    /* Button base */
     #songLibList .songBtn{
       border-radius: 14px;
       padding: 10px 12px;
@@ -946,7 +921,6 @@
       color: rgba(29,78,216,1);
     }
     
-    /* === DARK MODE OVERRIDES === */
     html[data-ui-theme="dark"] #songLibList .songItem{
       background: rgba(15,23,42,0.55);
       border-color: rgba(148,163,184,0.18);
@@ -1204,6 +1178,7 @@
         </button>
         <button id="btnSelToggle">SELECTION : OFF</button>
         <button id="btnSelCopy" disabled>Copy</button>
+        <button id="btnSelCut" type="button">Cut</button>
         <button id="btnSelPaste" disabled>Paste</button>
         <button id="btnSave">Save</button>
         <button id="btnHotkeys">Hotkey</button>
@@ -1224,6 +1199,9 @@
         <span class="kbd">Ctrl+S</span> Save (overwrite),
         <span class="kbd">Ctrl+Z</span> Undo,
         <span class="kbd">Ctrl+Y</span> Redo,
+        <span class="kbd">Ctrl+C</span> Copy,
+        <span class="kbd">Ctrl+X</span> Cut,
+        <span class="kbd">Ctrl+V</span> Paste,
         <span class="kbd">Ctrl+O</span> Import,
         <span class="kbd">B</span> Back (Audio Gear / Rack).
     </div>
