@@ -6,6 +6,8 @@
 
 import { NOTE_PACK, AUDIOGEARSPACE } from "./notePack.js";
 import { parseGmsfV1, writeGmsfV1, download } from "./gmsf.js";
+import { gmsfStateToMidiBytes, downloadMidi } from "./midi.js";
+import { midiArrayBufferToGmsfState } from "./midi_import.js";
 
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js", { updateViaCache: "none" });
@@ -58,27 +60,64 @@ function injectCredits() {
     color: var(--ui-text-soft, rgba(0,0,0,.70));
   `;
 
-  bar.innerHTML = `
-    <div>
-      <b>${new Date().getFullYear()} Growtopia Music Simulator MyLegGuy</b>
-      <span style="opacity:.8"> - Web Ver by <b>KIXDEV</b></span>
-    </div>
-    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
-      <span style="opacity:.85">Join <b>MusicStore</b> - Growtopia Music Community (Midman & Composer Hub)</span>
-      <a href="${DISCORD_URL}" target="_blank" rel="noopener"
-         style="
-           text-decoration:none;
-           padding:6px 10px;
-           border-radius: 12px;
-           border:1px solid rgba(37,99,235,.35);
-           background: rgba(37,99,235,.10);
-           color: rgba(37,99,235,1);
-           font-weight:700;
-         ">
-        Discord MusicStore
-      </a>
-    </div>
-  `;
+    const GITHUB_REPO_URL = "https://github.com/Kixdev/GrowtopiaMusicSimulatorFinal-Web";
+    const LICENSE_URL = `${GITHUB_REPO_URL}/blob/main/LICENSE`;
+    
+    bar.innerHTML = `
+      <div>
+        <b>${new Date().getFullYear()} Growtopia Music Simulator</b>
+        <span style="opacity:.8"> by <b>MyLegGuy</b> - Web Ver by <b>KIXDEV</b></span>
+      </div>
+    
+      <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:center;">
+        <span style="opacity:.85">Join <b>MusicStore</b> - Growtopia Music Community (Midman & Composer Hub)</span>
+    
+        <a href="${DISCORD_URL}" target="_blank" rel="noopener noreferrer"
+           style="
+             text-decoration:none;
+             padding:6px 10px;
+             border-radius: 12px;
+             border:1px solid rgba(37,99,235,.35);
+             background: rgba(37,99,235,.10);
+             color: rgba(37,99,235,1);
+             font-weight:700;
+           ">
+          Discord MusicStore
+        </a>
+    
+        <a href="${GITHUB_REPO_URL}" target="_blank" rel="noopener noreferrer"
+           style="
+             text-decoration:none;
+             padding:6px 10px;
+             border-radius: 12px;
+             border:1px solid rgba(16,185,129,.35);
+             background: rgba(16,185,129,.10);
+             color: rgba(16,185,129,1);
+             font-weight:800;
+           ">
+          GitHub (Source)
+        </a>
+    
+        <a href="${LICENSE_URL}" target="_blank" rel="noopener noreferrer"
+           style="
+             text-decoration:none;
+             padding:6px 10px;
+             border-radius: 12px;
+             border:1px solid rgba(245,158,11,.35);
+             background: rgba(245,158,11,.10);
+             color: rgba(245,158,11,1);
+             font-weight:800;
+           ">
+          License: GPL-3.0-or-later
+        </a>
+      </div>
+    
+      <div style="opacity:.70; font-size:12px; margin-top:6px;">
+        Source code: <a href="${GITHUB_REPO_URL}" target="_blank" rel="noopener noreferrer"
+          style="color:inherit; text-decoration:underline;">${GITHUB_REPO_URL}</a>
+      </div>
+    `;
+
 
   const wrap = document.getElementById("wrap");
   if (wrap && wrap.parentNode) {
@@ -110,7 +149,6 @@ function resetSongCanvas() {
   undoStack.length = 0;
   redoStack.length = 0;
 
-  // reset Audio Convert buffer
   audioConvertOn = false;
   audioConvertBuf.length = 0;
   audioConvertUpdateUI();
@@ -137,11 +175,6 @@ let btnAudioConvert = document.getElementById("btnAudioConvert");
 let btnUIMode = document.getElementById("btnUIMode");
 let btnExportWav = document.getElementById("btnExportWav");
 
-
-
-/* =======================
-   UI Theme (Light/Dark) — header toggle only
-   ======================= */
 const UI_THEME_KEY = "gmsf_ui_theme_v1";
 let uiThemeManual = false;
 const _uiMql = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
@@ -230,9 +263,6 @@ function initUiTheme(){
 
 initUiTheme();
 
-/* =======================
-   WAV Export (One pass)
-   ======================= */
 
 let lastProjectBaseName = "";
 
@@ -333,6 +363,623 @@ function ensureExportWavButton(){
 
 ensureExportWavButton();
 
+let btnExportMidi = null;
+
+function ensureExportMidiButton(){
+  if (btnExportMidi) return;
+  const header = document.querySelector("header");
+  if (!header) return;
+
+  const b = document.createElement("button");
+  b.id = "btnExportMidi";
+  b.type = "button";
+  b.textContent = "Export MIDI";
+  b.title = "Export current song to a .mid file";
+  b.style.cssText = `
+    border-radius: 12px;
+    padding: 8px 10px;
+    border: 1px solid rgba(245,158,11,.35);
+    background: rgba(245,158,11,.12);
+    color: rgba(180,83,9,1);
+    font-weight: 900;
+    cursor: pointer;
+  `;
+
+  const anchor = document.getElementById("btnExportWav") || document.getElementById("btnExport");
+  if (anchor && anchor.parentNode === header) anchor.insertAdjacentElement("afterend", b);
+  else header.insertBefore(b, header.firstChild);
+
+  btnExportMidi = b;
+}
+
+ensureExportMidiButton();
+
+let btnReplace = null;
+
+function ensureReplaceButton(){
+  if (btnReplace) return;
+  const header = document.querySelector("header");
+  if (!header) return;
+
+  const b = document.createElement("button");
+  b.id = "btnReplace";
+  b.type = "button";
+  b.textContent = "Replace";
+  b.title = "Replace one note with another within a page range";
+  b.style.cssText = `
+    border-radius: 12px;
+    padding: 8px 10px;
+    border: 1px solid rgba(99,102,241,.35);
+    background: rgba(99,102,241,.12);
+    color: rgba(67,56,202,1);
+    font-weight: 900;
+    cursor: pointer;
+  `;
+
+  const anchor = document.getElementById("btnExportMidi") || document.getElementById("btnExportWav") || document.getElementById("btnExport");
+  if (anchor && anchor.parentNode === header) anchor.insertAdjacentElement("afterend", b);
+  else header.appendChild(b);
+
+  b.onclick = (e) => { e.preventDefault(); openReplaceModal(); };
+  btnReplace = b;
+}
+
+ensureReplaceButton();
+
+let _replaceUI = null;
+let _repFromId = 0;
+let _repToId = 0;
+let _repActive = "from";
+let _repScrollY = 0;
+
+function _repTotalPages(){
+  const w = Math.max(1, Number(state?.width || 1));
+  const pw = Math.max(1, Number(pageWidth || 25));
+  return Math.max(1, Math.ceil(w / pw));
+}
+
+function _repPageToColStart(page1){
+  const pw = Math.max(1, Number(pageWidth || 25));
+  return clamp((page1 - 1) * pw, 0, state.width - 1);
+}
+function _repPageToColEnd(page1){
+  const pw = Math.max(1, Number(pageWidth || 25));
+  return clamp(page1 * pw - 1, 0, state.width - 1);
+}
+
+function _repCountMatches(fromId, pA, pB){
+  const total = _repTotalPages();
+  const p0 = clamp(Math.min(pA, pB), 1, total);
+  const p1 = clamp(Math.max(pA, pB), 1, total);
+
+  const x0 = _repPageToColStart(p0);
+  const x1 = _repPageToColEnd(p1);
+
+  let tileHits = 0;
+  let gearHits = 0;
+
+  for (let x = x0; x <= x1; x++){
+    for (let y = 0; y < state.height; y++){
+      const cell = state.grid[y][x];
+      const id = cellId(cell);
+
+      if (typeof cell === "number"){
+        if (cell === fromId) tileHits++;
+        continue;
+      }
+
+      if (id === state.audioGearID && typeof cell !== "number"){
+        const gd = cell.gearData;
+        if (gd){
+          for (let i = 0; i < AUDIOGEARSPACE; i++){
+            if (gd[i * 2] === fromId) gearHits++;
+          }
+        }
+        if (fromId === state.audioGearID) tileHits++;
+        continue;
+      }
+
+      if (id === fromId) tileHits++;
+    }
+  }
+
+  return { tileHits, gearHits, x0, x1, p0, p1, total };
+}
+
+function _repReplaceNow(fromId, toId, pA, pB){
+  const total = _repTotalPages();
+  let p0 = clamp(Math.min(pA, pB), 1, total);
+  let p1 = clamp(Math.max(pA, pB), 1, total);
+
+  const x0 = _repPageToColStart(p0);
+  const x1 = _repPageToColEnd(p1);
+
+  if (fromId === toId){
+    showStatus("Replace: from and to are the same.", 1400);
+    return 0;
+  }
+
+  const changes = [];
+
+  for (let x = x0; x <= x1; x++){
+    for (let y = 0; y < state.height; y++){
+      const before = state.grid[y][x];
+      let after = before;
+      let changed = false;
+
+      if (typeof before === "number"){
+        if (before === fromId){
+          after = toId;
+          changed = true;
+        }
+      } else {
+        const id = cellId(before);
+
+        if (id === state.audioGearID && typeof before !== "number"){
+          let any = false;
+          const gd0 = before.gearData ? new Uint8Array(before.gearData) : new Uint8Array(AUDIOGEARSPACE * 2);
+
+          for (let i = 0; i < AUDIOGEARSPACE; i++){
+            const ix = i * 2;
+            if (gd0[ix] === fromId){
+              gd0[ix] = toId;
+              any = true;
+            }
+          }
+
+          if (any){
+            after = {
+              id: before.id,
+              volume: before.volume ?? 100,
+              gearData: gd0,
+            };
+            changed = true;
+          }
+
+          if (fromId === state.audioGearID){
+            after = toId;
+            changed = true;
+          }
+        } else {
+          if (id === fromId){
+            after = toId;
+            changed = true;
+          }
+        }
+      }
+
+      if (changed){
+        changes.push({ x, y, before, after });
+      }
+    }
+  }
+
+  if (!changes.length){
+    showStatus("No matches in that page range.", 1600);
+    return 0;
+  }
+
+  pushHistoryMulti(changes);
+  for (const c of changes) applyCell(c.x, c.y, c.after);
+
+  refreshMaxX();
+  draw();
+  scheduleAutosave();
+  showStatus(`Replaced ${changes.length} item(s) ✅`, 2000);
+  return changes.length;
+}
+
+function ensureReplaceModal(){
+  if (_replaceUI) return _replaceUI;
+
+  const STYLE_ID = "replaceModalStyle";
+  if (!document.getElementById(STYLE_ID)){
+    const st = document.createElement("style");
+    st.id = STYLE_ID;
+    st.textContent = `
+      #repBack{
+        position:fixed; inset:0;
+        display:none;
+        align-items:center;
+        justify-content:center;
+        padding: 12px;
+        background: rgba(0,0,0,.20);
+        z-index: 120;
+        overscroll-behavior: contain;
+      }
+      #repBox{
+        width: min(440px, 94vw);
+        border-radius: 16px;
+        border: 1px solid var(--ui-border, rgba(0,0,0,.12));
+        background: var(--ui-surface, #fff);
+        box-shadow: 0 16px 60px rgba(0,0,0,.25);
+        padding: 12px;
+        color: var(--ui-text, rgba(0,0,0,.90));
+      }
+      html[data-ui-theme="dark"] #repBox,
+      :root[data-ui-theme="dark"] #repBox,
+      [data-ui-theme="dark"] #repBox{
+        color: rgba(240,244,255,0.94);
+      }
+      #repTop{
+        display:flex;
+        align-items:flex-start;
+        justify-content:space-between;
+        gap:12px;
+      }
+      #repTitle{
+        font-weight: 950;
+        font-size: 13px;
+        letter-spacing:.2px;
+      }
+      #repSub{
+        margin-top: 2px;
+        opacity: .75;
+        font-size: 11px;
+        line-height: 1.3;
+      }
+      .repBtn{
+        border-radius: 12px;
+        padding: 7px 10px;
+        border: 1px solid var(--ui-border-soft, rgba(0,0,0,.14));
+        background: var(--ui-surface, #fff);
+        cursor: pointer;
+        font-weight: 900;
+      }
+      .repBtn.primary{
+        background: var(--ui-primary-bg, #111);
+        border-color: var(--ui-primary-border, #111);
+        color: var(--ui-primary-text, #fff);
+      }
+      #repRow{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:10px;
+        margin-top: 10px;
+      }
+      .repPick{
+        flex: 1;
+        min-width: 0;
+        border: 1px solid var(--ui-border, rgba(0,0,0,.12));
+        border-radius: 14px;
+        padding: 8px;
+        display:flex;
+        align-items:center;
+        gap:10px;
+        cursor:pointer;
+        background: var(--ui-card, rgba(255,255,255,.92));
+      }
+      .repPick.active{
+        outline: 2px solid rgba(99,102,241,.45);
+        border-color: rgba(99,102,241,.45);
+      }
+      .repPick img{
+        width: 32px;
+        height: 32px;
+        object-fit: contain;
+        image-rendering: pixelated;
+      }
+      .repPick .lbl{
+        font-weight: 950;
+        font-size: 11px;
+        opacity: .8;
+      }
+      .repPick .id{
+        margin-top: 2px;
+        font-family: ui-monospace, Menlo, monospace;
+        font-size: 11px;
+        opacity: .75;
+      }
+      #repSwap{
+        flex:0 0 auto;
+        width: 40px;
+        height: 40px;
+        border-radius: 14px;
+        border: 1px solid var(--ui-border-soft, rgba(0,0,0,.14));
+        background: var(--ui-surface, #fff);
+        cursor:pointer;
+        font-weight: 950;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        user-select:none;
+      }
+      #repRange{
+        margin-top: 10px;
+        display:grid;
+        grid-template-columns: 1fr 1fr;
+        gap:10px;
+      }
+      .repField{
+        border: 1px solid var(--ui-border, rgba(0,0,0,.12));
+        border-radius: 14px;
+        padding: 8px 10px;
+        background: var(--ui-card, rgba(255,255,255,.92));
+      }
+      .repField .k{
+        font-weight: 900;
+        font-size: 11px;
+        opacity:.75;
+      }
+      .repField input{
+        margin-top: 6px;
+        width: 100%;
+        font-size: 14px;
+        padding: 8px 1px;
+        border-radius: 12px;
+        border: 1px solid var(--ui-border-soft, rgba(0,0,0,.14));
+        background: var(--ui-surface, #fff);
+        color: inherit;
+        outline: none;
+      }
+      #repInfo{
+        margin-top: 8px;
+        font-size: 11px;
+        opacity: .78;
+        line-height: 1.35;
+      }
+      #repGrid{
+        margin-top: 10px;
+        border-top: 1px solid var(--ui-border, rgba(0,0,0,.10));
+        padding-top: 10px;
+        display:grid;
+        grid-template-columns: repeat(8, 1fr);
+        gap: 6px;
+        max-height: min(42vh, 360px);
+        overflow:auto;
+        -webkit-overflow-scrolling: touch;
+      }
+      .repNoteBtn{
+        border: 1px solid var(--ui-border-soft, rgba(0,0,0,.14));
+        background: var(--ui-surface, #fff);
+        border-radius: 12px;
+        padding: 4px;
+        cursor:pointer;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+      }
+      .repNoteBtn.activeSide{
+        outline: 2px solid rgba(99,102,241,.45);
+        border-color: rgba(99,102,241,.45);
+      }
+      .repNoteBtn img{
+        width: 30px;
+        height: 30px;
+        object-fit: contain;
+        image-rendering: pixelated;
+      }
+      @media (max-width: 420px){
+        #repGrid{ grid-template-columns: repeat(6, 1fr); }
+      }
+    `;
+    document.head.appendChild(st);
+  }
+
+  const back = document.createElement("div");
+  back.id = "repBack";
+
+  const box = document.createElement("div");
+  box.id = "repBox";
+  box.innerHTML = `
+    <div id="repTop">
+      <div>
+        <div id="repTitle">Replace Notes</div>
+        <div id="repSub">
+          Example (25 cols): Page 1 = 1–25, Page 2 = 26–50, etc.
+        </div>
+      </div>
+      <button type="button" class="repBtn" id="repClose">Close</button>
+    </div>
+
+    <div id="repRow">
+      <div class="repPick" id="repPickFrom" title="Click to select FROM">
+        <img id="repImgFrom" alt="" />
+        <div>
+          <div class="lbl">FROM</div>
+          <div class="id" id="repTxtFrom">—</div>
+        </div>
+      </div>
+
+      <div id="repSwap" title="Swap">⟲</div>
+
+      <div class="repPick" id="repPickTo" title="Click to select TO">
+        <img id="repImgTo" alt="" />
+        <div>
+          <div class="lbl">TO</div>
+          <div class="id" id="repTxtTo">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="repRange">
+      <div class="repField">
+        <div class="k">From page</div>
+        <input id="repPageA" type="number" min="1" step="1" />
+      </div>
+      <div class="repField">
+        <div class="k">To page</div>
+        <input id="repPageB" type="number" min="1" step="1" />
+      </div>
+    </div>
+
+    <div id="repInfo"></div>
+
+    <div style="display:flex;gap:10px;align-items:center;justify-content:space-between;margin-top:10px;">
+      <button type="button" class="repBtn primary" id="repDo">Replace</button>
+      <div style="font-size:11px;opacity:.75;">Includes Audio fills</div>
+    </div>
+
+    <div id="repGrid"></div>
+  `;
+
+  back.appendChild(box);
+  document.body.appendChild(back);
+
+  const ui = {
+    back,
+    box,
+    close: box.querySelector("#repClose"),
+    pickFrom: box.querySelector("#repPickFrom"),
+    pickTo: box.querySelector("#repPickTo"),
+    imgFrom: box.querySelector("#repImgFrom"),
+    imgTo: box.querySelector("#repImgTo"),
+    txtFrom: box.querySelector("#repTxtFrom"),
+    txtTo: box.querySelector("#repTxtTo"),
+    swap: box.querySelector("#repSwap"),
+    pageA: box.querySelector("#repPageA"),
+    pageB: box.querySelector("#repPageB"),
+    info: box.querySelector("#repInfo"),
+    grid: box.querySelector("#repGrid"),
+    doBtn: box.querySelector("#repDo"),
+  };
+
+  function setActive(which){
+    _repActive = which;
+    ui.pickFrom.classList.toggle("active", which === "from");
+    ui.pickTo.classList.toggle("active", which === "to");
+  }
+
+  function setFrom(id){
+    _repFromId = id;
+    const img = NOTE_PACK?.notes?.[id]?.image;
+    ui.imgFrom.src = img ? assetUrl(img) : "";
+    ui.txtFrom.textContent = `id: ${id}`;
+    refreshInfo();
+  }
+  function setTo(id){
+    _repToId = id;
+    const img = NOTE_PACK?.notes?.[id]?.image;
+    ui.imgTo.src = img ? assetUrl(img) : "";
+    ui.txtTo.textContent = `id: ${id}`;
+    refreshInfo();
+  }
+
+  function refreshInfo(){
+    const total = _repTotalPages();
+    const a = clamp(parseInt(ui.pageA.value || "1", 10) || 1, 1, total);
+    const b = clamp(parseInt(ui.pageB.value || String(total), 10) || total, 1, total);
+
+    const res = _repCountMatches(_repFromId, a, b);
+    ui.pageA.value = String(a);
+    ui.pageB.value = String(b);
+    ui.pageA.max = String(total);
+    ui.pageB.max = String(total);
+
+    const colA1 = res.x0 + 1;
+    const colB1 = res.x1 + 1;
+
+    const hits = res.tileHits + res.gearHits;
+
+    ui.info.textContent =
+      `View pages: ${res.p0} → ${res.p1} (total ${res.total}). ` +
+      `Columns: ${colA1}–${colB1}. ` +
+      `Matches: ${hits} (tiles ${res.tileHits}, gear fills ${res.gearHits}).`;
+  }
+
+  function renderGrid(){
+    ui.grid.innerHTML = "";
+    const ids = NOTE_PACK.uiOrder
+      .filter(v => v !== undefined)
+      .filter(v => NOTE_PACK.notes[v] !== undefined);
+
+    for (const noteId of ids){
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "repNoteBtn";
+      b.dataset.id = String(noteId);
+
+      const img = document.createElement("img");
+      img.src = assetUrl(NOTE_PACK.notes[noteId].image);
+      img.loading = "lazy";
+      b.appendChild(img);
+
+      b.onclick = () => {
+        const id = Number(noteId);
+        if (_repActive === "from") setFrom(id);
+        else setTo(id);
+
+        b.classList.add("activeSide");
+        setTimeout(() => b.classList.remove("activeSide"), 160);
+      };
+
+      ui.grid.appendChild(b);
+    }
+  }
+
+  function open(){
+    _repScrollY = window.scrollY || 0;
+
+    back.style.display = "flex";
+    setActive(_repActive);
+
+    const total = _repTotalPages();
+    ui.pageA.min = "1"; ui.pageB.min = "1";
+    ui.pageA.max = String(total);
+    ui.pageB.max = String(total);
+
+    if (!ui.pageA.value) ui.pageA.value = "1";
+    if (!ui.pageB.value) ui.pageB.value = String(total);
+
+    if (!_repFromId){
+      _repFromId = selectedNote || 1;
+      setFrom(_repFromId);
+    } else setFrom(_repFromId);
+
+    if (!_repToId){
+      _repToId = selectedNote || 1;
+      setTo(_repToId);
+    } else setTo(_repToId);
+
+    renderGrid();
+    refreshInfo();
+
+    requestAnimationFrame(() => window.scrollTo(0, _repScrollY));
+  }
+
+  function close(){
+    back.style.display = "none";
+    requestAnimationFrame(() => window.scrollTo(0, _repScrollY));
+  }
+
+  ui.close.onclick = (e) => { e.preventDefault(); close(); };
+
+  back.addEventListener("click", (e) => { if (e.target === back) close(); });
+
+  ui.pickFrom.onclick = () => setActive("from");
+  ui.pickTo.onclick = () => setActive("to");
+
+  ui.swap.onclick = () => {
+    const a = _repFromId;
+    _repFromId = _repToId;
+    _repToId = a;
+    setFrom(_repFromId);
+    setTo(_repToId);
+    setActive(_repActive);
+  };
+
+  ui.pageA.addEventListener("input", refreshInfo);
+  ui.pageB.addEventListener("input", refreshInfo);
+
+  ui.doBtn.onclick = () => {
+    const total = _repTotalPages();
+    const a = clamp(parseInt(ui.pageA.value || "1", 10) || 1, 1, total);
+    const b = clamp(parseInt(ui.pageB.value || String(total), 10) || total, 1, total);
+    const count = _repReplaceNow(_repFromId, _repToId, a, b);
+    if (count > 0) refreshInfo();
+  };
+
+  _replaceUI = { open, close, ui };
+  return _replaceUI;
+}
+
+function openReplaceModal(){
+  const m = ensureReplaceModal();
+  m.open();
+}
+
+
 const btnExport = document.getElementById("btnExport");
 const btnImport = document.getElementById("btnImport");
 const btnLibrary = document.getElementById("btnLibrary");
@@ -342,6 +989,7 @@ const fileImport = document.getElementById("fileImport");
 const btnSelToggle = document.getElementById("btnSelToggle");
 const btnSelCopy = document.getElementById("btnSelCopy");
 const btnSelPaste = document.getElementById("btnSelPaste");
+const btnSelCut = document.getElementById("btnSelCut");
 
 const inpBpm = document.getElementById("inpBpm");
 const inpVol = document.getElementById("inpVol");
@@ -418,8 +1066,6 @@ if (songSetApply) {
   };
 }
 
-
-// zoom config
 const VIEW_COLS_NORMAL = 25;
 const VIEW_COLS_ZOOM = 10;
 const TILE_NORMAL = 32;
@@ -427,9 +1073,45 @@ const TILE_NORMAL = 32;
 const TILE_ZOOM = Math.round((VIEW_COLS_NORMAL * TILE_NORMAL) / VIEW_COLS_ZOOM); 
 let zoomOn = false;
 
-/* =======================
-   Canvas Theme
-   ======================= */
+const LABEL_WIDTH = 36; 
+const LABEL_PAD_X = 10;
+const ROW_LABELS = ["B","A","G","F","E","D","C","b","a","g","f","e","d","c"];
+const COL_LABELS = ["A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y"];
+const FOOTER_HEIGHT_TILES = 1; 
+
+function isDarkUiTheme() {
+  return (document.documentElement && document.documentElement.dataset && document.documentElement.dataset.uiTheme === "dark");
+}
+
+function drawThemedLabelText(ctx2, text, x, y, align, isDark) {
+  ctx2.save();
+  ctx2.font = "900 19px system-ui, Arial";
+  ctx2.textAlign = align || "left";
+  ctx2.textBaseline = "middle";
+
+  if (isDark) {
+    ctx2.fillStyle = "rgba(240,244,255,0.94)";
+    ctx2.strokeStyle = "rgba(0,0,0,0.45)";
+    ctx2.lineWidth = 3;
+    ctx2.shadowColor = "rgba(0,0,0,0.55)";
+    ctx2.shadowBlur = 6;
+    ctx2.shadowOffsetX = 0;
+    ctx2.shadowOffsetY = 1;
+    ctx2.strokeText(text, x, y);
+    ctx2.fillText(text, x, y);
+  } else {
+    ctx2.fillStyle = "rgba(0,0,0,0.90)";
+    ctx2.strokeStyle = "rgba(255,255,255,0.55)";
+    ctx2.lineWidth = 2;
+    ctx2.shadowColor = "rgba(255,255,255,0.0)";
+    ctx2.shadowBlur = 0;
+    ctx2.strokeText(text, x, y);
+    ctx2.fillText(text, x, y);
+  }
+  ctx2.restore();
+}
+
+
 const CANVAS_THEME_KEY = "gmsf_canvas_theme_v1";
 
 const CANVAS_THEMES = [
@@ -548,6 +1230,50 @@ function themeColorForCell(theme, vx, y) {
   return "#FFFFFF";
 }
 
+function _hexToRgb(_h) {
+  const h = String(_h || "").trim();
+  const m = h.match(/^#?([0-9a-f]{6})$/i) || h.match(/^#?([0-9a-f]{3})$/i);
+  if (!m) return null;
+  let s = m[1];
+  if (s.length === 3) s = s.split("").map(ch => ch + ch).join("");
+  const n = parseInt(s, 16);
+  return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+}
+function _relLuma(r, g, b) {
+  const srgb = [r, g, b].map(v => {
+    v /= 255;
+    return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+  });
+  return 0.2126 * srgb[0] + 0.7152 * srgb[1] + 0.0722 * srgb[2];
+}
+function _canvasThemeIsLight(theme) {
+  try {
+    const samples = [
+      themeColorForCell(theme, 0, 0),
+      themeColorForCell(theme, Math.floor(pageWidth / 2), 0),
+      themeColorForCell(theme, 0, Math.floor(state.height / 2)),
+      themeColorForCell(theme, Math.floor(pageWidth / 2), Math.floor(state.height / 2)),
+    ];
+    let sum = 0, n = 0;
+    for (const c of samples) {
+      const rgb = _hexToRgb(c);
+      if (!rgb) continue;
+      sum += _relLuma(rgb.r, rgb.g, rgb.b);
+      n++;
+    }
+    const avg = n ? (sum / n) : 1;
+    return avg > 0.55;
+  } catch {
+    return true;
+  }
+}
+
+// Line kix
+function getGridStrokeForCurrentCanvasTheme() {
+  const uiDark = isDarkUiTheme();
+  return `rgba(0,0,0,${uiDark ? 2.34 : 2.46})`;
+}
+
 function drawCanvasThemeBackground(ctx2) {
   const theme = CANVAS_THEMES[canvasThemeIndex] || CANVAS_THEMES[0];
   const w = pageWidth * TILE;
@@ -567,21 +1293,25 @@ function drawCanvasThemeBackground(ctx2) {
     }
   }
 
+  
+  const _gridStroke = getGridStrokeForCurrentCanvasTheme();
   ctx2.save();
-  ctx2.strokeStyle = "#000";     
-  ctx2.lineWidth = 3;            
-  ctx2.globalAlpha = 1;         
+  
+  // Line Kix
+  ctx2.strokeStyle = _gridStroke;
+  ctx2.lineWidth = 2;
+  ctx2.globalAlpha = 2;
 
   ctx2.beginPath();
 
   for (let x = 0; x <= pageWidth; x++) {
-    const px = x * TILE + 0.5;  
+    const px = x * TILE + 0.5;
     ctx2.moveTo(px, 0);
     ctx2.lineTo(px, h);
   }
 
   for (let y = 0; y <= state.height; y++) {
-    const py = y * TILE + 0.5;   
+    const py = y * TILE + 0.5;
     ctx2.moveTo(0, py);
     ctx2.lineTo(w, py);
   }
@@ -589,7 +1319,6 @@ function drawCanvasThemeBackground(ctx2) {
   ctx2.stroke();
   ctx2.restore();
 }
-
 
 canvasThemeIndex = loadCanvasThemeIndex();
 
@@ -617,6 +1346,8 @@ let selectedNote = 1;
 let playing = false;
 let paused = false;
 let timer = null;
+let _tickBusy = false; 
+
 
 let fileHandle = null;
 
@@ -688,24 +1419,17 @@ fx.eqMid.connect(fx.eqHighMid);
 fx.eqHighMid.connect(fx.eqPresence);
 fx.eqPresence.connect(fx.eqHigh);
 fx.eqHigh.connect(fx.eqTreble);
-
 fx.eqTreble.connect(fx.satPre);
 fx.satPre.connect(fx.sat);
 fx.sat.connect(fx.satPost);
-
 fx.satPost.connect(fx.comp);
-
-// split
 fx.comp.connect(fx.dry);
 fx.dry.connect(fx.master);
-
 fx.comp.connect(fx.reverb);
 fx.reverb.connect(fx.wet);
 fx.wet.connect(fx.master);
-
 fx.master.connect(audioCtx.destination);
 
-// impulse + saturation helpers
 function makeImpulse(seconds = 1.4, decay = 3.0) {
   const rate = audioCtx.sampleRate;
   const length = Math.max(1, Math.floor(rate * seconds));
@@ -741,7 +1465,6 @@ function makeSaturationCurve(amount = 0.6) {
 const EQ_KEY = "gmsf_eq_settings_v1";
 const FX_KEY = "gmsf_fx_settings_v3";
 
-// defaults
 const EQ_DEFAULT = {
   subBass: 0,
   bass: 0,
@@ -754,7 +1477,6 @@ const EQ_DEFAULT = {
 };
 
 const FX_DEFAULT = {
-  // reverb off
   reverbMix: 0,
   reverbTime: 1.4,
   reverbDecay: 3.0,
@@ -798,7 +1520,6 @@ function applyEqSettings(s) {
 }
 
 function applyFxSettings(s) {
-  // Reverb wet/dry + IR
   const mix = clamp(Number(s.reverbMix), 0, 0.6);
   fx.wet.gain.value = mix;
   fx.dry.gain.value = 1 - mix;
@@ -875,14 +1596,12 @@ function fmtNum(v, digits = 2, suffix = "") {
 }
 
 function refreshAudioPanelUI() {
-  // EQ
   for (const k in _audioUI.eq) {
     const ui = _audioUI.eq[k];
     if (!ui) continue;
     ui.input.value = String(eqSettings[k]);
     ui.val.textContent = fmtDB(eqSettings[k]);
   }
-  // FX
   for (const k in _audioUI.fx) {
     const ui = _audioUI.fx[k];
     if (!ui) continue;
@@ -891,9 +1610,6 @@ function refreshAudioPanelUI() {
   }
 }
 
-/* =======================
-   Inject Audio Panel (Tabs + 2 Cards)
-   ======================= */
 function injectAudioPanel() {
   if (document.getElementById("audioPanel")) return;
 
@@ -1033,7 +1749,6 @@ function injectAudioPanel() {
 
       @media (max-width: 860px){
         .apGrid{ grid-template-columns: 1fr; }
-        /* mobile tab behavior: hide non-active card */
         #audioPanel[data-active="eq"] .apCard.fx{ display:none; }
         #audioPanel[data-active="fx"] .apCard.eq{ display:none; }
       }
@@ -1126,7 +1841,6 @@ function injectAudioPanel() {
   const grid = document.createElement("div");
   grid.className = "apGrid";
 
-  // ---------- slider builder ----------
   const mkRow = (label, input, val) => {
     const row = document.createElement("div");
     row.className = "apRow";
@@ -1160,7 +1874,6 @@ function injectAudioPanel() {
     return { row: mkRow(label, input, val), input, val };
   };
 
-  // ---------- EQ card ----------
   const eqCard = document.createElement("div");
   eqCard.className = "apCard eq";
 
@@ -1217,7 +1930,6 @@ function injectAudioPanel() {
     eqCard.appendChild(r.row);
   }
 
-  // ---------- FX card ----------
   const fxCard = document.createElement("div");
   fxCard.className = "apCard fx";
 
@@ -1282,13 +1994,11 @@ function injectAudioPanel() {
   grid.appendChild(fxCard);
   panel.appendChild(grid);
 
-  // place panel in left card
   const wrapRoot = document.getElementById("wrap");
   const leftCard = wrapRoot ? wrapRoot.querySelector(".card") : null;
   if (leftCard) leftCard.appendChild(panel);
   else document.body.appendChild(panel);
 
-  // init tab visual + slider values
   setTab(active);
   refreshAudioPanelUI();
   applyCollapse();
@@ -1319,8 +2029,6 @@ function collectUsedSoundPaths() {
       const cell = state.grid[y][x];
       const id = cellId(cell);
       if (!id) continue;
-
-      // gear
       if (id === state.audioGearID && typeof cell !== "number") {
         const gd = cell.gearData;
         if (gd) {
@@ -1334,7 +2042,6 @@ function collectUsedSoundPaths() {
         continue;
       }
 
-      // normal note
       const p = NOTE_PACK.notes[id]?.sounds?.[y];
       if (p) paths.add(p);
     }
@@ -1384,7 +2091,6 @@ async function warmUpGearSamples(gearData) {
 }
 
 
-// ---------- Instrument map (letter -> instrument)
 const LETTER_MAP = {
   P: { key: "piano",   name: "Piano" },
   B: { key: "bass",    name: "Bass" },
@@ -1398,15 +2104,15 @@ const LETTER_MAP = {
   T: { key: "trumpet", name: "Mexican Trumpet" },
 };
 
-// order tampil (biar rapi)
-const INSTR_ORDER = ["piano","bass","drum","sax","flute","guitar","violin","lyre","eguitar","trumpet","spooky","festive","repeat","blank","gear","other"];
+const INSTR_ORDER = ["piano","bass","drum","sax","flute","guitar","violin","lyre","eguitar","trumpet","spooky","festive","repeatBegin","repeatEnd","blank","gear","other"];
 
 function keyName(key){
   if (key === "gear") return "Audio Rack / Gear";
-  if (key === "repeat") return "Repeat (Start+End)";
+  if (key === "repeatBegin") return "Repeat Begin";
+  if (key === "repeatEnd") return "Repeat End";
   if (key === "blank") return "Blank / Rest";
   if (key === "spooky") return "Spooky";
-  if (key === "festive") return "Festive";
+  if (key === "festive") return "Winterfest";
   if (key === "other") return "Other";
   for (const L in LETTER_MAP){
     if (LETTER_MAP[L].key === key) return LETTER_MAP[L].name;
@@ -1499,10 +2205,16 @@ function inferKeyFallback(noteId){
   if (snd.includes("festive")) return "festive";
 
   if (
-    img.includes("repeatstart") || img.includes("repeatend") ||
-    (img.includes("repeat") && (img.includes("start") || img.includes("end"))) ||
-    img.includes("repeat_begin") || img.includes("repeat_end")
-  ) return "repeat";
+    img.includes("repeatstart") ||
+    img.includes("repeat_begin") ||
+    (img.includes("repeat") && (img.includes("start") || img.includes("begin")))
+  ) return "repeatBegin";
+
+  if (
+    img.includes("repeatend") ||
+    img.includes("repeat_end") ||
+    (img.includes("repeat") && img.includes("end"))
+  ) return "repeatEnd";
 
   if (img.includes("blank") || img.includes("rest") || img.includes("empty") || img.includes("clear") || img.includes("none")) return "blank";
 
@@ -1519,8 +2231,8 @@ function classifyNoteId(noteId){
 
   if (SPECIAL_IDS.gear != null && noteId === SPECIAL_IDS.gear) return { key: "gear", acc: null };
 
-  if (SPECIAL_IDS.repeatStart != null && noteId === SPECIAL_IDS.repeatStart) return { key: "repeat", acc: null };
-  if (SPECIAL_IDS.repeatEnd   != null && noteId === SPECIAL_IDS.repeatEnd)   return { key: "repeat", acc: null };
+  if (SPECIAL_IDS.repeatStart != null && noteId === SPECIAL_IDS.repeatStart) return { key: "repeatBegin", acc: null };
+  if (SPECIAL_IDS.repeatEnd   != null && noteId === SPECIAL_IDS.repeatEnd)   return { key: "repeatEnd", acc: null };
 
   const gi = NOTE_PACK?.gearInfo?.[noteId];
   if (gi && gi.letter){
@@ -1531,7 +2243,12 @@ function classifyNoteId(noteId){
     return { key, acc };
   }
 
-  return { key: inferKeyFallback(noteId), acc: null };
+  const k = inferKeyFallback(noteId);
+  const isMus =
+    (k === "piano" || k === "bass" || k === "drum" || k === "sax" || k === "flute" ||
+     k === "guitar" || k === "violin" || k === "lyre" || k === "eguitar" || k === "trumpet" ||
+     k === "other");
+  return { key: k, acc: isMus ? "-" : null };
 }
 
 const _iconCache = new Map();
@@ -1544,8 +2261,14 @@ function findIconIdForKey(key){
     return id || 0;
   }
 
-  if (key === "repeat"){
-    const id = SPECIAL_IDS.repeatStart ?? SPECIAL_IDS.repeatEnd ?? 0;
+  if (key === "repeatBegin"){
+    const id = SPECIAL_IDS.repeatStart ?? 0;
+    _iconCache.set(key, id);
+    return id;
+  }
+
+  if (key === "repeatEnd"){
+    const id = SPECIAL_IDS.repeatEnd ?? SPECIAL_IDS.repeatStart ?? 0;
     _iconCache.set(key, id);
     return id;
   }
@@ -1621,7 +2344,6 @@ function iconUrlForKey(key){
   return img ? assetUrl(img) : "";
 }
 
-// ---------- Stats engine
 function computeSongStats(){
   refreshSpecialIDs(); 
 
@@ -1649,9 +2371,8 @@ function computeSongStats(){
     return buckets.get(key);
   };
 
-  // init buckets
   for (const L in LETTER_MAP) ensure(LETTER_MAP[L].key);
-  ensure("spooky"); ensure("festive"); ensure("repeat"); ensure("blank"); ensure("gear"); ensure("other");
+  ensure("spooky"); ensure("festive"); ensure("repeatBegin"); ensure("repeatEnd"); ensure("blank"); ensure("gear"); ensure("other");
 
   let nonZero = 0;
   let gearTilesTotal = 0;
@@ -1664,29 +2385,11 @@ function computeSongStats(){
       if (id === 0) continue;
       nonZero++;
 
-      // gear tile
       if (id === state.audioGearID && typeof cell !== "number"){
         gearTilesTotal++;
         const g = ensure("gear");
         g.placed++;
         g.gearTiles++;
-
-        const gd = cell.gearData;
-        if (gd && gd.length >= AUDIOGEARSPACE*2){
-          for (let i=0;i<AUDIOGEARSPACE;i++){
-            const nid = gd[i*2];
-            if (nid !== 0){
-              gearSlotsTotal++;
-              const cls = classifyNoteId(nid);
-              const b = ensure(cls.key);
-              b.gearSlots++;
-
-              if (cls.acc === "#") b.gearSlotsS++;
-              else if (cls.acc === "b") b.gearSlotsF++;
-              else if (cls.acc === "-") b.gearSlotsN++;
-            }
-          }
-        }
         continue;
       }
 
@@ -1718,7 +2421,8 @@ function computeSongStats(){
 
   const estEvents = audibleNotes + gearSlotsTotal;
 
-  const list = INSTR_ORDER.map(k => buckets.get(k)).filter(Boolean);
+  const _order = ["gear", ...INSTR_ORDER.filter(k => k !== "gear")];
+  const list = _order.map(k => buckets.get(k)).filter(Boolean);
 
   return {
     width, height,
@@ -1759,11 +2463,14 @@ function injectStatsUI(){
       justify-content:center;
       z-index:95;
       padding: 10px;
+      overscroll-behavior: contain;
     }
     #statsModal{
       width: min(560px, 96vw);
       max-height: min(72vh, 520px);
       overflow:auto;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
       background: var(--ui-surface, #fff);
       border-radius: 16px;
       border:1px solid rgba(0,0,0,.12);
@@ -1865,7 +2572,7 @@ function injectStatsUI(){
     <div id="statsTop">
       <div>
         <h3>Total Notes</h3>
-        <div class="sub">Detect: Normal / Sharp / Flat + Spooky/Festive/Repeat/Blank</div>
+        <div class="sub">Note / Sharp / Flat + Spooky/Festive/Repeat Begin/End/Blank</div>
       </div>
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
         <button id="statsRefresh" class="primary" style="background: var(--ui-primary-bg, #111);border-color: var(--ui-primary-border, #111);">Refresh</button>
@@ -1935,13 +2642,17 @@ function injectAudioConvertUI(){
 function openStatsModal(){
   const back = document.getElementById("statsBack");
   if (!back) return;
+  if (back.style.display === "flex") return;
   renderStatsModal();
+  kmModalLock();
   back.style.display = "flex";
 }
 function closeStatsModal(){
   const back = document.getElementById("statsBack");
   if (!back) return;
+  if (back.style.display !== "flex") { back.style.display = "none"; return; }
   back.style.display = "none";
+  kmModalUnlock();
 }
 
 function renderStatsModal(){
@@ -1952,14 +2663,14 @@ function renderStatsModal(){
 
   sum.innerHTML = `
     <div class="statCard">
-      <div class="k">Total Placed Notes</div>
+      <div class="k">Placed notes (outside Audio Gear)</div>
       <div class="v">${s.placedNotes}</div>
-      <div class="k">Include sharp/flat + spooky/festive + repeat + blank</div>
+      <div class="k">Counts only tiles placed directly on the canvas.</div>
     </div>
     <div class="statCard">
       <div class="k">Audio Rack / Gear</div>
       <div class="v">${s.gearTilesTotal} tile</div>
-      <div class="k">Filled slots: ${s.gearSlotsTotal}</div>
+      <div class="k">Notes inside the rack are not counted.</div>
     </div>
   `;
 
@@ -1967,34 +2678,53 @@ function renderStatsModal(){
 
   for (const it of s.list){
     if (!it) continue;
+    const totalCount = (it.key === "gear")
+      ? (it.gearTiles || 0)
+      : (it.placed || 0);
 
-    if (it.key==="other" && it.placed===0 && it.audible===0 && it.gearSlots===0 && it.gearTiles===0) continue;
-
-    if ((it.key==="repeat" || it.key==="blank" || it.key==="spooky" || it.key==="festive") && it.placed===0) continue;
+    if (totalCount === 0) continue;
+    if ((it.key==="repeatBegin" || it.key==="repeatEnd" || it.key==="blank" || it.key==="spooky" || it.key==="festive") && it.placed===0) continue;
 
     const icon = iconUrlForKey(it.key);
 
-    const nsfPlaced = (it.placedN || it.placedS || it.placedF)
-      ? `Note:${it.placedN}  Sharp:${it.placedS}  Flat:${it.placedF}`
-      : `—`;
+    const noteN = (it.placedN || 0);
+    const noteS = (it.placedS || 0);
+    const noteF = (it.placedF || 0);
 
-    const nsfGear = (it.gearSlotsN || it.gearSlotsS || it.gearSlotsF)
-      ? `NOTE:${it.gearSlotsN}  SHARP:${it.gearSlotsS}  FLAT:${it.gearSlotsF}`
-      : `—`;
+    const noteBreak = `Note:${noteN}  Sharp:${noteS}  Flat:${noteF}`;
 
-    const metaHtml = (it.key === "gear")
-      ? `
-        <div class="insMeta">
-          <div>Gear tiles: <span class="pill">${it.gearTiles}</span></div>
-          <div>Slots total: <span class="pill">${s.gearSlotsTotal}</span></div>
-        </div>
-      `
-      : `
-        <div class="insMeta">
-          <div><span class="pill">${it.placed}</span></div>
-          <div><span class="pill">${nsfPlaced}</span></div>
-        </div>
-      `;
+    const metaHtml =
+      (it.key === "gear")
+        ? `
+          <div class="insMeta">
+            <div>Tiles: <span class="pill">${it.gearTiles}</span></div>
+            <div><span class="pill">Audio Rack</span></div>
+          </div>
+        `
+        : (it.key === "repeatBegin")
+          ? `
+            <div class="insMeta">
+              <div>Begin: <span class="pill">${it.placed}</span></div>
+            </div>
+          `
+          : (it.key === "repeatEnd")
+            ? `
+              <div class="insMeta">
+                <div>End: <span class="pill">${it.placed}</span></div>
+              </div>
+            `
+            : ((it.key==="blank" || it.key==="spooky" || it.key==="festive"))
+              ? `
+                <div class="insMeta">
+                  <div>Count: <span class="pill">${it.placed}</span></div>
+                </div>
+              `
+              : `
+                <div class="insMeta">
+                  <div><span class="pill">${it.placed || 0}</span></div>
+                  <div><span class="pill">${noteBreak}</span></div>
+                </div>
+              `;
 
     const card = document.createElement("div");
     card.className = "insCard";
@@ -2015,11 +2745,11 @@ let selectionMode = false;
 
 const AUDIO_CONVERT_MAX = 5;
 let audioConvertOn = false;
-const audioConvertBuf = []; // [{noteId, yPos}]
+const audioConvertBuf = []; 
 const AUDIO_CONVERT_HOLD_MS = 420;
 const AUDIO_CONVERT_MOVE_PX = 8;
 
-let _acHold = null;         // {ax,y,clientX,clientY,pointerId,noteId}
+let _acHold = null;         
 let _acHoldTimer = null;
 
 function audioConvertCount(){ return audioConvertBuf.length; }
@@ -2121,10 +2851,18 @@ function audioConvertToggle(){
 let sel = { x1: -1, y1: -1, x2: -1, y2: -1 };
 let isSelecting = false;
 
+let selAnchorX = -1;
+let selAnchorY = -1;
+
+const SEL_EDGE_PX = 26;          
+const SEL_SCROLL_COOLDOWN = 140; 
+let _selLastAutoScroll = 0;
+
 let clipData = null;
 
 let pasteArmed = false;
 let pastePreviewX = -1; 
+let pastePreviewY = -1;
 let pasteClipCache = null;
 
 let _statusTimer = null;
@@ -2140,6 +2878,7 @@ function hasSelection() {
 
 function clearSelection() {
   sel.x1 = sel.y1 = sel.x2 = sel.y2 = -1;
+  selAnchorX = selAnchorY = -1;
   isSelecting = false;
 }
 
@@ -2164,6 +2903,81 @@ let _pasteBar = null;
 let _pasteRange = null;
 let _pastePosText = null;
 
+function selectionAutoPageScrollIfNeeded(e) {
+  const now = Date.now();
+  if (now - _selLastAutoScroll < SEL_SCROLL_COOLDOWN) return false;
+
+  const rect = cv.getBoundingClientRect();
+  const localX = e.clientX - rect.left;
+
+  const maxOffset = Math.max(0, state.width - pageWidth);
+
+  if (localX < SEL_EDGE_PX && songXOffset > 0) {
+    songXOffset = clamp(songXOffset - pageWidth, 0, maxOffset);
+    _selLastAutoScroll = now;
+    markBaseDirty();
+    return true;
+  }
+
+  if ((rect.width - localX) < SEL_EDGE_PX && songXOffset < maxOffset) {
+    songXOffset = clamp(songXOffset + pageWidth, 0, maxOffset);
+    _selLastAutoScroll = now;
+    markBaseDirty();
+    return true;
+  }
+
+  return false;
+}
+
+window.addEventListener("keydown", (e) => {
+  if (!selectionMode) return;
+
+  const ae = document.activeElement;
+  const tag = (ae && ae.tagName ? ae.tagName.toLowerCase() : "");
+  if (tag === "input" || tag === "textarea" || (ae && ae.isContentEditable)) return;
+
+  const isMac = /Mac|iPhone|iPad|iPod/i.test(navigator.platform);
+  const cmdOrCtrl = isMac ? e.metaKey : e.ctrlKey;
+
+  if (cmdOrCtrl && e.key.toLowerCase() === "a") {
+    e.preventDefault();
+
+    selAnchorX = 0;
+    selAnchorY = 0;
+    sel.x1 = 0; sel.y1 = 0;
+    sel.x2 = state.width - 1;
+    sel.y2 = state.height - 1;
+    isSelecting = false;
+
+    showStatus("Selected all.", 1200);
+    draw();
+    return;
+  }
+
+  if (cmdOrCtrl && e.key.toLowerCase() === "x") {
+    e.preventDefault();
+    if (!hasSelection()) {
+      showStatus("No selection.");
+      return;
+    }
+    cutSelectionToClipboard();
+    return;
+  }
+
+  if (e.key === "Escape") {
+    if (pasteArmed) {
+      cancelPaste();
+      return;
+    }
+    if (hasSelection()) {
+      clearSelection();
+      showStatus("Selection cleared.", 1000);
+      draw();
+    }
+  }
+});
+
+
 function ensureMobilePasteBar() {
   if (_pasteBar) return;
 
@@ -2183,10 +2997,15 @@ function ensureMobilePasteBar() {
         justify-content:space-between;
         padding: 10px 12px;
         border-radius: 16px;
-        border: 1px solid rgba(0,0,0,.12);
-        background: var(--ui-card, rgba(255,255,255,.92));
-        box-shadow: 0 16px 60px rgba(0,0,0,.20);
-        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255,255,255,.14);
+        background:
+          radial-gradient(700px 220px at 15% 15%, rgba(120,64,255,.22), transparent 60%),
+          radial-gradient(700px 220px at 85% 25%, rgba(0,204,255,.18), transparent 60%),
+          rgba(8,10,24,.92);
+        box-shadow: 0 18px 70px rgba(0,0,0,.55);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        color: rgba(240,244,255,.92);
       }
       #mobilePasteBar .mpLeft{
         display:flex;
@@ -2198,7 +3017,7 @@ function ensureMobilePasteBar() {
       #mobilePasteBar .mpTitle{
         font-weight: 900;
         font-size: 12px;
-        color: var(--ui-text-soft, rgba(0,0,0,.78));
+        color: rgba(240,244,255,.92);
         display:flex;
         gap:10px;
         align-items:center;
@@ -2206,7 +3025,7 @@ function ensureMobilePasteBar() {
       }
       #mobilePasteBar .mpTitle .mpPos{
         font-family: ui-monospace, Menlo, monospace;
-        opacity:.85;
+        opacity:.90;
         font-weight:800;
       }
       #mobilePasteBar input[type="range"]{
@@ -2222,19 +3041,32 @@ function ensureMobilePasteBar() {
       #mobilePasteBar button{
         border-radius: 12px;
         padding: 8px 10px;
-        border: 1px solid rgba(0,0,0,.16);
-        background: #fff;
+        border: 1px solid rgba(255,255,255,.16);
+        background:
+          radial-gradient(180px 80px at 20% 20%, rgba(120,64,255,.14), transparent 60%),
+          radial-gradient(180px 80px at 80% 30%, rgba(0,204,255,.10), transparent 60%),
+          rgba(255,255,255,.08);
+        color: rgba(240,244,255,.92);
         cursor: pointer;
         font-weight: 900;
+        box-shadow: 0 10px 34px rgba(0,0,0,.35);
+        transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease;
+      }
+      #mobilePasteBar button:active{
+        transform: scale(.99);
       }
       #mobilePasteBar button.primary{
-        background: var(--ui-primary-bg, #111);
-        border-color: var(--ui-primary-border, #111);
-        color: var(--ui-primary-text, #fff);
+        border-color: rgba(0,204,255,.35);
+        background:
+          radial-gradient(220px 90px at 20% 20%, rgba(0,204,255,.20), transparent 60%),
+          radial-gradient(220px 90px at 80% 30%, rgba(120,64,255,.18), transparent 60%),
+          rgba(0,204,255,.16);
+        color: rgba(240,244,255,.95);
       }
       #mobilePasteBar button.nudge{
         font-family: ui-monospace, Menlo, monospace;
         font-weight: 900;
+        min-width: 40px;
       }
     `;
     document.head.appendChild(st);
@@ -2267,14 +3099,28 @@ function ensureMobilePasteBar() {
   const btns = document.createElement("div");
   btns.className = "mpBtns";
 
+  const btnUp = document.createElement("button");
+  btnUp.type = "button";
+  btnUp.className = "nudge";
+  btnUp.title = "Move up";
+  btnUp.textContent = "▲";
+
+  const btnDown = document.createElement("button");
+  btnDown.type = "button";
+  btnDown.className = "nudge";
+  btnDown.title = "Move down";
+  btnDown.textContent = "▼";
+
   const btnLeft = document.createElement("button");
   btnLeft.type = "button";
   btnLeft.className = "nudge";
+  btnLeft.title = "Move left";
   btnLeft.textContent = "◀";
 
   const btnRight = document.createElement("button");
   btnRight.type = "button";
   btnRight.className = "nudge";
+  btnRight.title = "Move right";
   btnRight.textContent = "▶";
 
   const btnPaste = document.createElement("button");
@@ -2286,6 +3132,8 @@ function ensureMobilePasteBar() {
   btnCancel.type = "button";
   btnCancel.textContent = "Cancel";
 
+  btns.appendChild(btnUp);
+  btns.appendChild(btnDown);
   btns.appendChild(btnLeft);
   btns.appendChild(btnRight);
   btns.appendChild(btnPaste);
@@ -2294,6 +3142,22 @@ function ensureMobilePasteBar() {
   _pasteBar.appendChild(left);
   _pasteBar.appendChild(btns);
   document.body.appendChild(_pasteBar);
+
+  function updatePosText(x, y) {
+    if (!pasteClipCache) {
+      _pastePosText.textContent = "—";
+      return;
+    }
+    const fromX = x + 1;
+    const toX = Math.min(x + (pasteClipCache.w || 1), state.width);
+
+    const maxY = Math.max(0, state.height - (pasteClipCache.h || 1));
+    const yy = clamp(y, 0, maxY);
+    const fromY = yy + 1;
+    const toY = Math.min(yy + (pasteClipCache.h || 1), state.height);
+
+    _pastePosText.textContent = `X ${fromX}-${toX}/${state.width} • Y ${fromY}-${toY}/${state.height}`;
+  }
 
   function setPos(newPos) {
     if (!pasteClipCache) return;
@@ -2307,9 +3171,20 @@ function ensureMobilePasteBar() {
     markBaseDirty();
     draw();
 
-    const from = v + 1;
-    const to = Math.min(v + (pasteClipCache.w || 1), state.width);
-    _pastePosText.textContent = `${from}-${to}/${state.width}`;
+    updatePosText(v, (pastePreviewY !== -1 ? pastePreviewY : (pasteClipCache.sy0 ?? 0)));
+  }
+
+  function setY(newY) {
+    if (!pasteClipCache) return;
+    const maxY = Math.max(0, state.height - (pasteClipCache.h || 1));
+    const v = clamp(Number(newY), 0, maxY);
+
+    pastePreviewY = v;
+    pasteClipCache.sy0 = v;
+    markBaseDirty();
+    draw();
+
+    updatePosText((pastePreviewX !== -1 ? pastePreviewX : songXOffset), v);
   }
 
   _pasteRange.addEventListener("input", () => setPos(_pasteRange.value));
@@ -2317,9 +3192,17 @@ function ensureMobilePasteBar() {
   btnLeft.onclick = () => setPos(Number(_pasteRange.value) - 1);
   btnRight.onclick = () => setPos(Number(_pasteRange.value) + 1);
 
+  btnUp.onclick = () => setY((pastePreviewY !== -1 ? pastePreviewY : (pasteClipCache.sy0 ?? 0)) - 1);
+  btnDown.onclick = () => setY((pastePreviewY !== -1 ? pastePreviewY : (pasteClipCache.sy0 ?? 0)) + 1);
+
   btnPaste.onclick = () => {
     if (!pasteArmed || !pasteClipCache) return;
     const x = (pastePreviewX !== -1) ? pastePreviewX : songXOffset;
+
+    const maxY = Math.max(0, state.height - (pasteClipCache.h || 1));
+    const yy = clamp((pastePreviewY !== -1 ? pastePreviewY : (pasteClipCache.sy0 ?? 0)), 0, maxY);
+    pasteClipCache.sy0 = yy;
+
     const did = pasteClipAtFixedYWithHistory(x, pasteClipCache);
     setPasteArmed(false, null);
     showStatus(did ? "Pasted!" : "Nothing pasted.");
@@ -2331,8 +3214,8 @@ function ensureMobilePasteBar() {
     cancelPaste();
   };
 
-  // Expose setPos for updater
   _pasteBar._setPos = setPos;
+  _pasteBar._setY = setY;
 }
 
 function updateMobilePasteBar() {
@@ -2347,22 +3230,40 @@ function updateMobilePasteBar() {
   const maxPos = Math.max(0, state.width - (pasteClipCache.w || 1));
   _pasteRange.max = String(maxPos);
 
-  // initialize preview position if unset
   if (pastePreviewX === -1) {
     pastePreviewX = clamp(songXOffset, 0, maxPos);
   }
   _pasteRange.value = String(pastePreviewX);
 
+  const maxY = Math.max(0, state.height - (pasteClipCache.h || 1));
+  if (pastePreviewY === -1) {
+    const baseY = Number.isFinite(pasteClipCache.sy0) ? pasteClipCache.sy0 : 0;
+    pastePreviewY = clamp(baseY, 0, maxY);
+  }
+  pasteClipCache.sy0 = clamp(pastePreviewY, 0, maxY);
+
   _pasteBar.style.display = "flex";
-  // sync text
+
   if (typeof _pasteBar._setPos === "function") {
     _pasteBar._setPos(pastePreviewX);
+  }
+  if (typeof _pasteBar._setY === "function") {
+    _pasteBar._setY(pastePreviewY);
   }
 }
 
 function setPasteArmed(on, clip = null) {
   pasteArmed = !!on;
   pasteClipCache = clip;
+
+  if (pasteArmed && pasteClipCache) {
+    const maxY = Math.max(0, state.height - (pasteClipCache.h || 1));
+    const baseY = Number.isFinite(pasteClipCache.sy0) ? pasteClipCache.sy0 : 0;
+    pastePreviewY = clamp(baseY, 0, maxY);
+    pasteClipCache.sy0 = pastePreviewY;
+  } else {
+    pastePreviewY = -1;
+  }
 
   if (IS_COARSE_POINTER && pasteArmed && pasteClipCache) {
     const maxPos = Math.max(0, state.width - (pasteClipCache.w || 1));
@@ -2385,6 +3286,7 @@ function updateSelectionButtons() {
 
   if (btnSelCopy) btnSelCopy.disabled = !selectionMode;
   if (btnSelPaste) btnSelPaste.disabled = !selectionMode;
+  if (btnSelCut) btnSelCut.disabled = !selectionMode;
 
   if (!selectionMode) {
     clearSelection();
@@ -2395,11 +3297,10 @@ function updateSelectionButtons() {
   draw();
 }
 
-// Touch drag-paint
 let isPainting = false;
 let paintButtonRight = false;
 let lastPaintKey = "";
-let paintChanges = new Map(); // key -> {x,y,before,after}
+let paintChanges = new Map(); 
 let paintStarted = false;
 
 function keyXY(x, y) { return `${x},${y}`; }
@@ -2466,6 +3367,61 @@ async function copySelectionToClipboard() {
   draw();
 }
 
+
+async function cutSelectionToClipboard() {
+  if (!selectionMode) {
+    showStatus("Selection mode OFF.");
+    return;
+  }
+  if (!hasSelection()) {
+    showStatus("No selection.");
+    return;
+  }
+
+  const { sx, sy, ex, ey, w, h } = selCorners();
+  const cells = [];
+  for (let y = sy; y <= ey; y++) {
+    const row = [];
+    for (let x = sx; x <= ex; x++) {
+      row.push(cloneCellForClip(state.grid[y][x]));
+    }
+    cells.push(row);
+  }
+
+  clipData = { ver: 1, w, h, cells, sy0: sy };
+
+  const text = "GMSFCLIP1:" + JSON.stringify(clipData);
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    }
+  } catch {}
+
+  const changes = [];
+  for (let y = sy; y <= ey; y++) {
+    for (let x = sx; x <= ex; x++) {
+      const before = cloneCell(state.grid[y][x]);
+      const after = 0;
+      if (!cellsEqual(before, after)) {
+        state.grid[y][x] = 0;
+        changes.push({ x, y, before, after });
+      }
+    }
+  }
+
+  if (changes.length) {
+    pushHistoryMulti(changes);
+    markBaseDirty();
+    refreshMaxX();
+  }
+
+  clearSelection();
+  setPasteArmed(true, clipData);
+
+  showStatus(changes.length ? `Cut ${w}x${h} - Click to paste` : "Nothing cut.", 1600);
+  draw();
+}
+
 async function readClipFromSystemIfNeeded() {
   if (clipData) return clipData;
 
@@ -2498,7 +3454,7 @@ async function armPaste() {
 
 function cancelPaste() {
   setPasteArmed(false, null);
-  showStatus("Paste Canceled.");
+  showStatus("Paste canceled.");
   draw();
 }
 
@@ -2513,6 +3469,7 @@ function makeEmptyState(width, height) {
     grid: Array.from({ length: height }, () => Array(width).fill(0)),
   };
 }
+
 
 function normalizeSongWidth(n) {
   const v = Number(n);
@@ -2539,18 +3496,15 @@ function resizeSongWidth(newWidth) {
   state.width = target;
   state.grid = newGrid;
 
-  // reset repeat flags
   repeatUsed = Array.from({ length: state.height }, () => Array(state.width).fill(false));
 
   setSongXOffset(songXOffset);
 
-  // selection/paste + history
   try { clearSelection(); } catch {}
   try { setPasteArmed(false, null); } catch {}
   undoStack.length = 0;
   redoStack.length = 0;
 
-  // persist preference
   localStorage.setItem(PREF_SONG_WIDTH_KEY, String(state.width));
 
   refreshMaxX();
@@ -2560,6 +3514,99 @@ function resizeSongWidth(newWidth) {
 }
 
 function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+
+let _kmModalLockCount = 0;
+let _kmPrevOverflow = null;
+
+function kmEnsureGlobalModalLockStyles(){
+  const id = "km-global-modal-lock-style";
+  if (document.getElementById(id)) return;
+  const st = document.createElement("style");
+  st.id = id;
+  st.textContent = `
+    html.km-modal-open, body.km-modal-open{
+      overflow: hidden !important;
+      height: 100%;
+    }
+
+    .km-overlay, #statsBack, #modalBack{
+      overscroll-behavior: contain;
+    }
+    .km-body, #statsModal{
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+    }
+  `;
+  document.head.appendChild(st);
+}
+
+function kmModalLock(){
+  kmEnsureGlobalModalLockStyles();
+  if (_kmModalLockCount === 0){
+    const scrollY = window.scrollY || window.pageYOffset || 0;
+    const scrollX = window.scrollX || window.pageXOffset || 0;
+
+    _kmPrevOverflow = {
+      html: document.documentElement.style.overflow,
+      body: document.body.style.overflow,
+      pos: document.body.style.position,
+      top: document.body.style.top,
+      left: document.body.style.left,
+      right: document.body.style.right,
+      width: document.body.style.width,
+      paddingRight: document.body.style.paddingRight,
+      scrollY,
+      scrollX,
+    };
+
+    const scrollbarW = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+    if (scrollbarW > 0){
+      const curPad = parseFloat(getComputedStyle(document.body).paddingRight || "0") || 0;
+      document.body.style.paddingRight = `${curPad + scrollbarW}px`;
+    }
+
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.overflow = "hidden";
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${scrollY}px`;
+    document.body.style.left = "0";
+    document.body.style.right = "0";
+    document.body.style.width = "100%";
+
+    document.documentElement.classList.add("km-modal-open");
+    document.body.classList.add("km-modal-open");
+  }
+  _kmModalLockCount++;
+}
+
+function kmModalUnlock(){
+  if (_kmModalLockCount <= 0) return;
+  _kmModalLockCount--;
+  if (_kmModalLockCount === 0){
+    const prev = _kmPrevOverflow || {
+      html: "", body: "", pos: "", top: "", left: "", right: "", width: "", paddingRight: "",
+      scrollY: 0, scrollX: 0
+    };
+
+    document.documentElement.style.overflow = prev.html;
+    document.body.style.overflow = prev.body;
+
+    document.body.style.position = prev.pos;
+    document.body.style.top = prev.top;
+    document.body.style.left = prev.left;
+    document.body.style.right = prev.right;
+    document.body.style.width = prev.width;
+    document.body.style.paddingRight = prev.paddingRight;
+
+    document.documentElement.classList.remove("km-modal-open");
+    document.body.classList.remove("km-modal-open");
+
+    try { window.scrollTo(prev.scrollX || 0, prev.scrollY || 0); } catch(e){}
+
+    _kmPrevOverflow = null;
+  }
+}
+
 
 function setSongXOffset(x) {
   const maxOff = Math.max(0, state.width - pageWidth);
@@ -2610,7 +3657,7 @@ function resetPlayState() {
 
 function bpmMs(bpm) { return 15000 / bpm; }
 
-function getCanvasTileFromEvent(e, canvas, cols, rows, tileSize) {
+function getCanvasTileFromEvent(e, canvas, cols, rows, tileSize, labelWidth = 0) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
   const scaleY = canvas.height / rect.height;
@@ -2618,14 +3665,17 @@ function getCanvasTileFromEvent(e, canvas, cols, rows, tileSize) {
   const cx = (e.clientX - rect.left) * scaleX;
   const cy = (e.clientY - rect.top) * scaleY;
 
-  const x = Math.floor(cx / tileSize);
+  if (cx < labelWidth) return null;
+
+  const x = Math.floor((cx - labelWidth) / tileSize);
   const y = Math.floor(cy / tileSize);
 
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-
   if (x < 0 || x >= cols || y < 0 || y >= rows) return null;
+
   return { x, y };
 }
+
 
 function resizeGearCanvas() {
   gearCanvas.width = AUDIOGEARSPACE * GEAR_TILE;
@@ -2633,7 +3683,7 @@ function resizeGearCanvas() {
 }
 
 function resizeMainCanvas() {
-  cv.width = pageWidth * TILE;
+  cv.width = LABEL_WIDTH + (pageWidth * TILE);
   cv.height = (state.height + 1) * TILE;
   markBaseDirty();
   requestDraw();
@@ -2681,7 +3731,6 @@ function assetUrl(p) {
   return new URL(p, PUBLIC_BASE).toString();
 }
 
-// ===== image/audio load =====
 async function loadImg(path) {
   if (imgCache.has(path)) return imgCache.get(path);
 
@@ -2737,7 +3786,6 @@ function playSample(path, vol01) {
   });
 }
 
-// ===== WAV export helpers (offline render) =====
 let _wavExportBusy = false;
 
 function _cloneRepeatUsedEmpty() {
@@ -2767,7 +3815,6 @@ function _collectColumnEventsForExport(absX, repUsed, tSec, outEvents, masterVol
       continue;
     }
 
-    // Audio Gear cell (composite)
     if (id === state.audioGearID && typeof cell !== "number") {
       const gd = cell.gearData;
       const gearVol01 = ((cell.volume ?? 100) / 100) * masterVol01;
@@ -2782,7 +3829,6 @@ function _collectColumnEventsForExport(absX, repUsed, tSec, outEvents, masterVol
       continue;
     }
 
-    // Normal note
     const p = NOTE_PACK.notes[id]?.sounds?.[y];
     if (p) outEvents.push({ path: p, time: tSec, vol01: masterVol01 });
   }
@@ -2803,6 +3849,8 @@ function _collectColumnEventsForExport(absX, repUsed, tSec, outEvents, masterVol
   return null;
 }
 
+
+
 function _buildPlaybackScheduleOnePass(startX) {
   const bpm = clamp(Number(state.bpm || 100), 1, 32766);
   const stepSec = (bpmMs(bpm) / 1000);
@@ -2811,11 +3859,9 @@ function _buildPlaybackScheduleOnePass(startX) {
   const repUsed = _cloneRepeatUsedEmpty();
   const events = [];
 
-  // Play once (no endless loop-back at end)
   let pos = clamp(Number(startX || 0), 0, state.width - 1);
   let tSec = 0;
 
-  // Hard safety limit to avoid weird infinite repeat edge-cases
   const hardLimit = Math.max(5000, (state.width * 6));
   let steps = 0;
 
@@ -2858,7 +3904,6 @@ function _createFxGraphForOffline(ctx) {
     master: ctx.createGain(),
   };
 
-  // Copy static EQ shapes
   fx2.eqSubBass.type  = fx.eqSubBass.type;  fx2.eqSubBass.frequency.value  = fx.eqSubBass.frequency.value;
   fx2.eqBass.type     = fx.eqBass.type;     fx2.eqBass.frequency.value     = fx.eqBass.frequency.value;     fx2.eqBass.Q.value     = fx.eqBass.Q.value;
   fx2.eqLowMid.type   = fx.eqLowMid.type;   fx2.eqLowMid.frequency.value   = fx.eqLowMid.frequency.value;   fx2.eqLowMid.Q.value   = fx.eqLowMid.Q.value;
@@ -2868,7 +3913,6 @@ function _createFxGraphForOffline(ctx) {
   fx2.eqHigh.type     = fx.eqHigh.type;     fx2.eqHigh.frequency.value     = fx.eqHigh.frequency.value;     fx2.eqHigh.Q.value     = fx.eqHigh.Q.value;
   fx2.eqTreble.type   = fx.eqTreble.type;   fx2.eqTreble.frequency.value   = fx.eqTreble.frequency.value;
 
-  // Copy current EQ gains
   fx2.eqSubBass.gain.value  = fx.eqSubBass.gain.value;
   fx2.eqBass.gain.value     = fx.eqBass.gain.value;
   fx2.eqLowMid.gain.value   = fx.eqLowMid.gain.value;
@@ -2878,28 +3922,23 @@ function _createFxGraphForOffline(ctx) {
   fx2.eqHigh.gain.value     = fx.eqHigh.gain.value;
   fx2.eqTreble.gain.value   = fx.eqTreble.gain.value;
 
-  // Copy saturation
   fx2.satPre.gain.value = fx.satPre.gain.value;
   fx2.sat.curve = fx.sat.curve;
   fx2.sat.oversample = fx.sat.oversample;
   fx2.satPost.gain.value = fx.satPost.gain.value;
 
-  // Copy compressor
   fx2.comp.threshold.value = fx.comp.threshold.value;
   fx2.comp.knee.value = fx.comp.knee.value;
   fx2.comp.ratio.value = fx.comp.ratio.value;
   fx2.comp.attack.value = fx.comp.attack.value;
   fx2.comp.release.value = fx.comp.release.value;
 
-  // Copy reverb mix + IR buffer
   fx2.wet.gain.value = fx.wet.gain.value;
   fx2.dry.gain.value = fx.dry.gain.value;
   fx2.reverb.buffer = fx.reverb.buffer;
 
-  // Copy master gain
   fx2.master.gain.value = fx.master.gain.value;
 
-  // Wire graph (same topology)
   fx2.input.connect(fx2.eqSubBass);
   fx2.eqSubBass.connect(fx2.eqBass);
   fx2.eqBass.connect(fx2.eqLowMid);
@@ -2931,7 +3970,6 @@ async function _audioBufferToWavBlob(buffer, onProgress) {
   const sampleRate = buffer.sampleRate;
   const length = buffer.length;
 
-  // Interleave float
   const chData = [];
   for (let ch = 0; ch < numCh; ch++) chData.push(buffer.getChannelData(ch));
   const interleaved = new Float32Array(length * numCh);
@@ -2939,7 +3977,6 @@ async function _audioBufferToWavBlob(buffer, onProgress) {
     for (let ch = 0; ch < numCh; ch++) interleaved[i * numCh + ch] = chData[ch][i];
   }
 
-  // PCM 16-bit in chunks (biar UI tetap hidup)
   const pcm16 = new Int16Array(interleaved.length);
   const total = interleaved.length;
   const chunk = 32768;
@@ -2952,10 +3989,9 @@ async function _audioBufferToWavBlob(buffer, onProgress) {
       pcm16[i] = (s < 0) ? (s * 0x8000) : (s * 0x7FFF);
     }
     if (onProgress) onProgress(i / total);
-    await new Promise(r => setTimeout(r, 0)); // kasih napas ke UI
+    await new Promise(r => setTimeout(r, 0)); 
   }
 
-  // WAV header
   const bytesPerSample = 2;
   const blockAlign = numCh * bytesPerSample;
   const byteRate = sampleRate * blockAlign;
@@ -3032,23 +4068,20 @@ async function exportWavCurrentSongOnePass() {
       wavProgressShow("Exporting WAV…", "Preparing…");
     }
 
-    // ===== Loading samples with progress
     const uniq = [...new Set(events.map(e => e.path))];
     let loaded = 0;
     const total = Math.max(1, uniq.length);
 
     wavProgressSet(`Loading samples… (${loaded}/${total})`, 0);
 
-    // load sequential (paling aman + bisa progress)
     for (const p of uniq) {
-      await getBuf(p); // pakai cache yang sama
+      await getBuf(p); 
       loaded++;
-      // 0%..35% untuk loading
+
       const pct = (loaded / total) * 35;
       wavProgressSet(`Loading samples… (${loaded}/${total})`, pct);
     }
 
-    // ===== Offline render (no real % available)
     const sampleRate =
       (fx && fx.reverb && fx.reverb.buffer && fx.reverb.buffer.sampleRate) ||
       (audioCtx && audioCtx.sampleRate) ||
@@ -3059,7 +4092,7 @@ async function exportWavCurrentSongOnePass() {
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     if (!OAC) throw new Error("OfflineAudioContext is not supported in this browser.");
 
-    wavProgressSet("Rendering audio… (please wait estimated 5min)", null); // indeterminate
+    wavProgressSet("Rendering audio… (please wait estimated 5min)", null); 
 
     const offline = new OAC(2, frames, sampleRate);
     const fx2 = _createFxGraphForOffline(offline);
@@ -3080,7 +4113,7 @@ async function exportWavCurrentSongOnePass() {
     wavProgressSet("Encoding WAV… 0%", 35);
 
     const wavBlob = await _audioBufferToWavBlob(rendered, (p) => {
-      const pct = 35 + (p * 60); // 35..95
+      const pct = 35 + (p * 60); 
       wavProgressSet(`Encoding WAV… ${Math.floor(p * 100)}%`, pct);
     });
 
@@ -3131,31 +4164,129 @@ async function previewPlacedNote(noteId, rowY) {
   playSample(path, Number(inpVol.value) / 100);
 }
 
-// ===== page nav =====
+let _viewAnim = null;
+
+function _easeOutCubic(t) {
+  t = clamp(Number(t) || 0, 0, 1);
+  return 1 - Math.pow(1 - t, 3);
+}
+
+function _ensureViewAnimStyle() {
+  if (document.getElementById("km-view-anim-style")) return;
+  const st = document.createElement("style");
+  st.id = "km-view-anim-style";
+  st.textContent = `
+    body.view-anim canvas{
+      filter:
+        drop-shadow(0 0 14px rgba(0,200,255,.18))
+        drop-shadow(0 0 26px rgba(120,64,255,.12));
+    }
+  `;
+  document.head.appendChild(st);
+}
+
+function cancelViewTransition() {
+  if (_viewAnim && _viewAnim.raf) cancelAnimationFrame(_viewAnim.raf);
+  _viewAnim = null;
+  document.body.classList.remove("view-anim");
+}
+
+function animateSongXOffsetTo(targetOffset, opts = {}) {
+  const maxOff = Math.max(0, state.width - pageWidth);
+  const to = clamp(Math.round(Number(targetOffset) || 0), 0, maxOff);
+  const from = songXOffset;
+
+  if (to === from) return;
+  if (_viewAnim && _viewAnim.to === to) return;
+
+  cancelViewTransition();
+  _ensureViewAnimStyle();
+  document.body.classList.add("view-anim");
+
+  const start = performance.now();
+  const duration = clamp(Number(opts.duration ?? 360), 80, 1200);
+  const maxStep = clamp(Number(opts.maxStep ?? 1), 1, 12);
+
+  _viewAnim = { from, to, start, duration, raf: 0 };
+
+  const step = (now) => {
+    if (!_viewAnim) return;
+
+    const t = (now - start) / duration;
+    const k = _easeOutCubic(t);
+    const desired = from + (to - from) * k;
+
+    const desiredInt = clamp(Math.round(desired), 0, maxOff);
+    let next = desiredInt;
+
+    if (next > songXOffset) next = Math.min(songXOffset + maxStep, next);
+    else if (next < songXOffset) next = Math.max(songXOffset - maxStep, next);
+
+    setSongXOffset(next);
+    draw();
+
+    if (t >= 1) {
+      setSongXOffset(to);
+      draw();
+      cancelViewTransition();
+      return;
+    }
+
+    _viewAnim.raf = requestAnimationFrame(step);
+  };
+
+  _viewAnim.raf = requestAnimationFrame(step);
+}
+
 function pageLeft() {
   if (playing) return;
-  if (songXOffset % pageWidth !== 0) setSongXOffset(Math.floor(songXOffset / pageWidth) * pageWidth);
-  else setSongXOffset(songXOffset < pageWidth ? (state.width - pageWidth) : (songXOffset - pageWidth));
+
+  const maxOff = Math.max(0, state.width - pageWidth);
+
+  let target;
+  if (songXOffset % pageWidth !== 0) {
+    target = Math.floor(songXOffset / pageWidth) * pageWidth;
+  } else {
+    target = (songXOffset < pageWidth) ? maxOff : (songXOffset - pageWidth);
+  }
+
   updateTransportUI();
-  draw();
+  animateSongXOffsetTo(target, { duration: 360 });
 }
 
 function pageRight() {
   if (playing) return;
-  if (songXOffset + pageWidth > state.width - pageWidth) setSongXOffset(songXOffset !== state.width - pageWidth ? (state.width - pageWidth) : 0);
-  else setSongXOffset(songXOffset + pageWidth);
+
+  const maxOff = Math.max(0, state.width - pageWidth);
+
+  let target;
+  if (songXOffset + pageWidth > maxOff) {
+    target = (songXOffset !== maxOff) ? maxOff : 0;
+  } else {
+    target = songXOffset + pageWidth;
+  }
+
   updateTransportUI();
-  draw();
+  animateSongXOffsetTo(target, { duration: 360 });
 }
 
 function snapViewToPage(absPos) {
-  const pageStart = Math.floor(absPos / pageWidth) * pageWidth;
+  const maxOff = Math.max(0, state.width - pageWidth);
+  const pageStart = clamp(Math.floor(absPos / pageWidth) * pageWidth, 0, maxOff);
   if (pageStart !== songXOffset) setSongXOffset(pageStart);
 }
 
+function snapViewToPageSmooth(absPos, opts = {}) {
+  const maxOff = Math.max(0, state.width - pageWidth);
+  const pageStart = clamp(Math.floor(absPos / pageWidth) * pageWidth, 0, maxOff);
+  if (pageStart === songXOffset) return;
+  if (_viewAnim && _viewAnim.to === pageStart) return;
 
+  const duration = Number(opts.duration ?? 220);
+  const maxStep = Number(opts.maxStep ?? 5); 
+  animateSongXOffsetTo(pageStart, { duration, maxStep });
+}
 
-// ===== repeat + column play =====
 async function playColumn(absX) {
   if (absX < 0 || absX >= state.width) return null;
 
@@ -3203,36 +4334,41 @@ async function playColumn(absX) {
       }
     }
 
+    resetPlayState();
     return 0;
   }
 
   return null;
 }
 
-// ===== tick =====
 async function tick() {
-  // stop trailing empties
-    if (playPos > maxX) {
-      resetPlayState();
-      playPos = playStartX || 0;
-      currentPlayPosition = playPos;
-      setSongXOffset(pageStartFromOffset(playPos));
-    }
+  if (_tickBusy) return;
+  _tickBusy = true;
+  try {
+      if (playPos > maxX) {
+        resetPlayState();
+        playPos = playStartX || 0;
+        currentPlayPosition = playPos;
+        setSongXOffset(pageStartFromOffset(playPos));
+      }
 
 
-  const col = playPos;
-  currentPlayPosition = col;
+    const col = playPos;
+    currentPlayPosition = col;
 
-  const jumpTo = await playColumn(col);
+    const jumpTo = await playColumn(col);
 
-  if (typeof jumpTo === "number") playPos = jumpTo;
-  else playPos = col + 1;
+    if (typeof jumpTo === "number") playPos = jumpTo;
+    else playPos = col + 1;
 
-  snapViewToPage(col);
-  draw();
+    snapViewToPageSmooth(col, { duration: 220, maxStep: 6 });
+    draw();
+  } finally {
+    _tickBusy = false;
+  }
 }
 
-// ===== transport UI =====
+
 function updateTransportUI() {
   if (playing) {
     btnPlay.textContent = "Stop";
@@ -3254,10 +4390,10 @@ function updateTransportUI() {
   }
 }
 
-function startFromFirstNote() {
+async function startFromFirstNote() {
   resetPlayState();
 
-  const startX = findFirstNonEmptyX(); 
+  const startX = findFirstNonEmptyX();
   playStartX = startX;
 
   playPos = startX;
@@ -3269,20 +4405,14 @@ function startFromFirstNote() {
   playing = true;
 
   clearInterval(timer);
-  timer = setInterval(tick, bpmMs(state.bpm));
+  timer = null;
 
   updateTransportUI();
   draw();
-}
 
-function startFromBeginning() {
-  resetPlayState();
-  setSongXOffset(0);
-  playPos = 0;
-  currentPlayPosition = 0;
+  await tick();
 
-  paused = false;
-  playing = true;
+  if (!playing) return;
 
   clearInterval(timer);
   timer = setInterval(tick, bpmMs(state.bpm));
@@ -3290,6 +4420,36 @@ function startFromBeginning() {
   updateTransportUI();
   draw();
 }
+
+
+async function startFromBeginning() {
+  resetPlayState();
+  setSongXOffset(0);
+
+  playStartX = 0;
+  playPos = 0;
+  currentPlayPosition = 0;
+
+  paused = false;
+  playing = true;
+
+  clearInterval(timer);
+  timer = null;
+
+  updateTransportUI();
+  draw();
+
+  await tick();
+
+  if (!playing) return;
+
+  clearInterval(timer);
+  timer = setInterval(tick, bpmMs(state.bpm));
+
+  updateTransportUI();
+  draw();
+}
+
 
 function stopPlayback() {
   clearInterval(timer);
@@ -3315,10 +4475,12 @@ function pausePlayback() {
   draw();
 }
 
-function startFromCurrentView() {
+async function startFromCurrentView() {
   const start = pageStartFromOffset(songXOffset);
 
   resetPlayState();
+  playStartX = start;
+
   playPos = start;
   currentPlayPosition = start;
   setSongXOffset(start);
@@ -3327,24 +4489,46 @@ function startFromCurrentView() {
   playing = true;
 
   clearInterval(timer);
+  timer = null;
+
+  updateTransportUI();
+  draw();
+
+  await tick();
+
+  if (!playing) return;
+
+  clearInterval(timer);
   timer = setInterval(tick, bpmMs(state.bpm));
 
   updateTransportUI();
   draw();
 }
 
-function resumeFromCurrentView() {
+
+async function resumeFromCurrentView() {
   if (!paused) return;
 
-  const start = pageStartFromOffset(songXOffset);
+  const maxOffset = Math.max(0, state.width - pageWidth);
+  const viewStart = clamp(Math.floor(songXOffset / pageWidth) * pageWidth, 0, maxOffset);
 
-  resetPlayState();
-  playPos = start;
-  currentPlayPosition = start;
-  setSongXOffset(start);
+  playPos = clamp(viewStart, 0, state.width - 1);
+  currentPlayPosition = playPos;
+
+  setSongXOffset(viewStart);
 
   paused = false;
   playing = true;
+
+  clearInterval(timer);
+  timer = null;
+
+  updateTransportUI();
+  draw();
+
+  await tick();
+
+  if (!playing) return;
 
   clearInterval(timer);
   timer = setInterval(tick, bpmMs(state.bpm));
@@ -3353,7 +4537,7 @@ function resumeFromCurrentView() {
   draw();
 }
 
-// ===== base64 helpers =====
+
 function uint8ToBase64(u8) {
   let s = "";
   const chunk = 0x8000;
@@ -3369,8 +4553,8 @@ function base64ToUint8(b64) {
   return u8;
 }
 
-// ===== autosave =====
 const AUTOSAVE_KEY = "gmsf_autosave_v1";
+const AUTOSAVE_META_KEY = "gmsf_autosave_meta_v1";
 let autosaveTimer = null;
 
 function scheduleAutosave() {
@@ -3379,16 +4563,115 @@ function scheduleAutosave() {
     try {
       const bytes = writeGmsfV1(state);
       localStorage.setItem(AUTOSAVE_KEY, uint8ToBase64(bytes));
+      localStorage.setItem(AUTOSAVE_META_KEY, JSON.stringify({
+        t: Date.now(),
+        w: state.width,
+        h: state.height,
+        bpm: state.bpm
+      }));
     } catch {}
   }, 300);
 }
 
+
+async function kmAutosavePrompt(meta) {
+  if (typeof kmEnsureMidiModalStyles === "function") kmEnsureMidiModalStyles();
+
+  try { if (typeof resizeMainCanvas === "function") resizeMainCanvas(); } catch {}
+  try { markBaseDirty(); } catch {}
+  try { draw(); } catch {}
+
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  try { draw(); } catch {}
+
+  kmModalLock();
+
+  const when = meta?.t ? new Date(meta.t) : null;
+  const whenText = when ? when.toLocaleString() : "unknown time";
+  const sizeText = (meta && meta.w && meta.h) ? `${meta.w}×${meta.h}` : "unknown size";
+  const bpmText  = (meta && meta.bpm) ? String(meta.bpm) : "unknown";
+
+  return await new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.className = "km-overlay";
+
+    overlay.innerHTML = `
+      <div class="km-modal" role="dialog" aria-modal="true" style="width:min(720px, 100%);">
+        <div class="km-head">
+          <div class="km-title">
+            <div>Autosave detected</div>
+            <small>A local autosave was found. Restore it?</small>
+          </div>
+          <button class="km-x" id="kmAutoClose" title="Close">✕</button>
+        </div>
+
+        <div class="km-body">
+          <div class="km-card">
+            <h4>Autosave details</h4>
+            <div style="display:grid; gap:8px; font-size:13px; opacity:.88;">
+              <div><b>Saved:</b> ${whenText}</div>
+              <div><b>Grid:</b> ${sizeText}</div>
+              <div><b>BPM:</b> ${bpmText}</div>
+            </div>
+
+            <div class="km-footnote" style="margin-top:12px;">
+              Restoring will overwrite the current canvas. You can also discard the autosave to stop seeing this prompt.
+            </div>
+          </div>
+        </div>
+
+        <div class="km-actions" style="justify-content:space-between;">
+          <button class="km-btn km-btn-danger" id="kmAutoDiscard">Discard autosave</button>
+          <div style="display:flex; gap:10px;">
+            <button class="km-btn" id="kmAutoKeep">Keep current</button>
+            <button class="km-btn km-btn-primary" id="kmAutoRestore">Restore</button>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(overlay);
+
+    function cleanup(result) {
+      document.removeEventListener("keydown", onKey);
+      try { overlay.remove(); } catch {}
+      kmModalUnlock();
+      resolve(result);
+    }
+
+    function onKey(e) {
+      if (e.key === "Escape") cleanup("keep");
+    }
+    document.addEventListener("keydown", onKey);
+
+    overlay.addEventListener("mousedown", (e) => {
+      if (e.target === overlay) cleanup("keep");
+    });
+
+    overlay.querySelector("#kmAutoClose").onclick = () => cleanup("keep");
+    overlay.querySelector("#kmAutoKeep").onclick = () => cleanup("keep");
+    overlay.querySelector("#kmAutoRestore").onclick = () => cleanup("restore");
+    overlay.querySelector("#kmAutoDiscard").onclick = () => cleanup("discard");
+  });
+}
 async function restoreAutosaveIfAny() {
   const b64 = localStorage.getItem(AUTOSAVE_KEY);
   if (!b64) return;
 
-  const ok = confirm("Previous autosave detected. Restore it?");
-  if (!ok) return;
+  let meta = null;
+  try {
+    const m = localStorage.getItem(AUTOSAVE_META_KEY);
+    meta = m ? JSON.parse(m) : null;
+  } catch { meta = null; }
+
+  const choice = await kmAutosavePrompt(meta);
+  if (choice === "discard") {
+    localStorage.removeItem(AUTOSAVE_KEY);
+    localStorage.removeItem(AUTOSAVE_META_KEY);
+    try { statusEl.textContent = "Autosave discarded."; } catch {}
+    return;
+  }
+  if (choice !== "restore") return;
 
   try {
     const bytes = base64ToUint8(b64);
@@ -3475,6 +4758,1520 @@ async function exportAsManual() {
   statusEl.textContent = "Exported ✅";
 }
 
+let btnMidiToGmsf = null;
+
+function ensureMidiToGmsfButton() {
+  if (btnMidiToGmsf) return;
+  const header = document.querySelector("header");
+  if (!header) return;
+
+  const b = document.createElement("button");
+  b.id = "btnMidiToGmsf";
+  b.type = "button";
+  b.textContent = "MIDI → GMSF";
+  b.title = "Convert a .mid file into .gmsf";
+  b.style.cssText = `
+    border-radius: 12px;
+    padding: 8px 10px;
+    border: 1px solid rgba(16,185,129,.35);
+    background: rgba(16,185,129,.12);
+    color: rgba(16,185,129,1);
+    font-weight: 900;
+    cursor: pointer;
+  `;
+
+  const anchor = document.getElementById("btnExportMidi") || document.getElementById("btnExport");
+  if (anchor && anchor.parentNode === header) anchor.insertAdjacentElement("afterend", b);
+  else header.insertBefore(b, header.firstChild);
+
+  btnMidiToGmsf = b;
+}
+
+ensureMidiToGmsfButton();
+
+const KM_MIDI_MODAL_KEY = "km_midi_import_settings_v1";
+
+function kmLoadMidiSettings() {
+  try {
+    const raw = localStorage.getItem(KM_MIDI_MODAL_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+function kmSaveMidiSettings(s) {
+  try { localStorage.setItem(KM_MIDI_MODAL_KEY, JSON.stringify(s)); } catch {}
+}
+
+function kmEnsureMidiModalStyles() {
+  if (document.getElementById("km-midi-modal-style")) return;
+  const st = document.createElement("style");
+  st.id = "km-midi-modal-style";
+  st.textContent = `
+  .km-overlay{
+    position:fixed; inset:0;
+    display:flex; align-items:center; justify-content:center;
+    padding:16px;
+    background:rgba(0,0,0,.62);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 999999;
+    overscroll-behavior: contain;
+  }
+
+  .km-modal{
+    position:relative;
+    width:min(860px, 100%);
+    max-height: 92vh;               
+    display:flex;                  
+    flex-direction: column;
+
+    border-radius:22px;
+    border:1px solid rgba(255,255,255,.14);
+    background:
+      radial-gradient(900px 450px at 15% 10%, rgba(120,64,255,.28), transparent 60%),
+      radial-gradient(800px 420px at 85% 20%, rgba(0,204,255,.22), transparent 55%),
+      radial-gradient(900px 520px at 50% 120%, rgba(255,80,190,.14), transparent 60%),
+      rgba(8,10,24,.92);
+    box-shadow: 0 30px 120px rgba(0,0,0,.70);
+    color: rgba(240,244,255,.92);
+    overflow:hidden;               
+  }
+
+  .km-modal::before{
+    content:"";
+    position:absolute; inset:-2px;
+    background:
+      radial-gradient(1px 1px at 10% 15%, rgba(255,255,255,.65) 50%, transparent 52%),
+      radial-gradient(1px 1px at 30% 45%, rgba(255,255,255,.35) 50%, transparent 52%),
+      radial-gradient(1px 1px at 55% 25%, rgba(255,255,255,.55) 50%, transparent 52%),
+      radial-gradient(1px 1px at 70% 55%, rgba(255,255,255,.30) 50%, transparent 52%),
+      radial-gradient(1px 1px at 85% 35%, rgba(255,255,255,.50) 50%, transparent 52%),
+      radial-gradient(1px 1px at 18% 70%, rgba(255,255,255,.40) 50%, transparent 52%),
+      radial-gradient(1px 1px at 42% 80%, rgba(255,255,255,.25) 50%, transparent 52%),
+      radial-gradient(1px 1px at 62% 75%, rgba(255,255,255,.45) 50%, transparent 52%),
+      radial-gradient(1px 1px at 92% 78%, rgba(255,255,255,.28) 50%, transparent 52%);
+    opacity:.25;
+    pointer-events:none;
+    border-radius:24px;
+    filter: blur(.15px);
+  }
+
+  .km-head{
+    position:sticky;               
+    top:0;                       
+    z-index:2;                     
+    background: inherit;          
+    flex: 0 0 auto;
+
+    padding:16px 18px;
+    display:flex; align-items:center; justify-content:space-between;
+    border-bottom:1px solid rgba(255,255,255,.10);
+  }
+
+  .km-title{
+    display:flex; flex-direction:column; gap:2px;
+    font-weight: 900;
+    letter-spacing:.2px;
+  }
+  .km-title small{
+    font-weight:600;
+    opacity:.75;
+  }
+  .km-x{
+    border:1px solid rgba(255,255,255,.18);
+    background:rgba(255,255,255,.08);
+    color: rgba(255,255,255,.9);
+    width:38px; height:38px;
+    border-radius:14px;
+    cursor:pointer;
+    font-size:18px;
+  }
+
+  .km-body{
+    position:relative;
+    flex: 1 1 auto;                
+    overflow:auto;                 
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    padding:16px 18px 8px;
+  }
+
+  .km-grid{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:12px;
+  }
+  @media (max-width: 720px){
+    .km-grid{ grid-template-columns: 1fr; }
+  }
+
+  .km-card{
+    border:1px solid rgba(255,255,255,.10);
+    background:rgba(255,255,255,.06);
+    border-radius:18px;
+    padding:12px;
+  }
+  .km-card h4{
+    margin:0 0 8px 0;
+    font-size:14px;
+    letter-spacing:.2px;
+    opacity:.92;
+  }
+  .km-row{
+    display:flex; align-items:center; justify-content:space-between;
+    gap:10px;
+    margin:8px 0;
+  }
+  .km-row label{
+    font-size:13px;
+    opacity:.82;
+    line-height:1.2;
+  }
+  .km-row .km-hint{
+    font-size:12px;
+    opacity:.65;
+    margin-top:2px;
+  }
+
+  .km-input, .km-select{
+    width: 220px;
+    max-width: 55vw;
+    border-radius: 14px;
+    border:1px solid rgba(255,255,255,.14);
+    background: rgb(255 255 255); 
+    color: rgb(0 0 0 / 92%);
+    padding: 10px 12px;
+    outline: none;
+  }
+
+  .km-small{
+    width: 120px;
+  }
+  .km-switch{
+    display:flex; align-items:center; gap:8px;
+  }
+  .km-toggle{
+    appearance:none;
+    width:44px; height:26px;
+    border-radius:999px;
+    border:1px solid rgba(255,255,255,.16);
+    background: rgba(0,0,0,.20);
+    position:relative;
+    cursor:pointer;
+    outline:none;
+  }
+  .km-toggle::after{
+    content:"";
+    position:absolute;
+    width:20px; height:20px;
+    top:2px; left:2px;
+    border-radius:999px;
+    background: rgba(255,255,255,.80);
+    transition: transform .18s ease, background .18s ease;
+  }
+  .km-toggle:checked{
+    background: rgba(0,200,255,.18);
+    border-color: rgba(0,200,255,.35);
+  }
+  .km-toggle:checked::after{
+    transform: translateX(18px);
+    background: rgba(200,245,255,.95);
+  }
+
+  .km-chips{
+    display:flex; flex-wrap:wrap; gap:8px;
+    margin-top:6px;
+  }
+  .km-chip{
+    border:1px solid rgba(255,255,255,.14);
+    background: rgba(0,0,0,.16);
+    padding:8px 10px;
+    border-radius:999px;
+    display:flex; align-items:center; gap:8px;
+    font-size:12px;
+    cursor:pointer;
+    user-select:none;
+  }
+  .km-chip input{ transform: scale(1.05); }
+
+  .km-actions{
+    position:sticky;               
+    bottom:0;                    
+    z-index:2;                     
+    background: inherit;         
+    flex: 0 0 auto;
+
+    padding:12px 18px 16px;
+    display:flex; justify-content:flex-end; gap:10px;
+    border-top:1px solid rgba(255,255,255,.10);
+  }
+
+  .km-btn{
+    border-radius: 16px;
+    padding: 10px 14px;
+    border: 1px solid rgba(255,255,255,.16);
+    background: rgba(255,255,255,.08);
+    color: rgba(240,244,255,.92);
+    font-weight: 900;
+    cursor: pointer;
+  }
+  .km-btn-primary{
+    border-color: rgba(0,200,255,.35);
+    background: rgba(0,200,255,.18);
+  }
+  .km-btn-danger{
+    border-color: rgba(255,80,190,.35);
+    background: rgba(255,80,190,.16);
+  }
+  .km-footnote{
+    margin-top:10px;
+    font-size:12px;
+    opacity:.70;
+    line-height:1.35;
+  }
+
+  @media (max-width: 420px){
+    .km-overlay{ padding:10px; }
+    .km-head{ padding:12px 12px; }
+    .km-body{ padding:12px 12px 8px; }
+    .km-actions{ padding:10px 12px 12px; }
+    .km-input, .km-select{ max-width: 62vw; }
+  }
+  `;
+  document.head.appendChild(st);
+}
+
+
+async function kmPickMidiFile() {
+  try {
+    if ("showOpenFilePicker" in window && window.isSecureContext) {
+      const [h] = await window.showOpenFilePicker({
+        types: [{ description: "MIDI", accept: { "audio/midi": [".mid", ".midi"] } }],
+        multiple: false
+      });
+      return await h.getFile();
+    }
+
+    return await new Promise((resolve) => {
+      const inp = document.createElement("input");
+      inp.type = "file";
+      inp.accept = ".mid,.midi";
+      inp.onchange = () => resolve(inp.files?.[0] || null);
+      inp.click();
+    });
+  } catch (err) {
+
+    if (err?.name === "AbortError" || err?.name === "NotAllowedError") return null;
+
+    const msg = String(err?.message || err);
+    if (msg.includes("aborted") || msg.includes("AbortError")) return null;
+
+    throw err;
+  }
+}
+
+let btnGmsfOctave = null;
+
+function ensureGmsfOctaveButton(){
+  if (btnGmsfOctave) return;
+  const header = document.querySelector("header");
+  if (!header) return;
+
+  const b = document.createElement("button");
+  b.id = "btnGmsfOctave";
+  b.type = "button";
+  b.textContent = "GMSF Octave";
+  b.title = "Transpose the current song or a .gmsf file (octaves/semitones)";
+  b.style.cssText = `
+    border-radius: 12px;
+    padding: 8px 10px;
+    border: 1px solid rgba(168,85,247,.35);
+    background: rgba(168,85,247,.14);
+    color: rgba(216,180,254,1);
+    font-weight: 900;
+    cursor: pointer;
+  `;
+
+  const anchor =
+    document.getElementById("btnMidiToGmsf") ||
+    document.getElementById("btnExportMidi") ||
+    document.getElementById("btnExport");
+  if (anchor && anchor.parentNode === header) anchor.insertAdjacentElement("afterend", b);
+  else header.appendChild(b);
+
+  btnGmsfOctave = b;
+  btnGmsfOctave.onclick = () => kmOpenGmsfOctaveModal();
+}
+
+ensureGmsfOctaveButton();
+
+const KM_GMSF_MODAL_KEY = "km_gmsf_octave_settings_v2";
+
+function kmLoadGmsfSettings() {
+  try {
+    const raw = localStorage.getItem(KM_GMSF_MODAL_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+function kmSaveGmsfSettings(s) {
+  try { localStorage.setItem(KM_GMSF_MODAL_KEY, JSON.stringify(s)); } catch {}
+}
+
+async function kmPickGmsfFile() {
+  try {
+    if ("showOpenFilePicker" in window && window.isSecureContext) {
+      const [h] = await window.showOpenFilePicker({
+        types: [
+          { description: "GMSF", accept: { "application/octet-stream": [".gmsf", ".gmf"] } }
+        ],
+        multiple: false
+      });
+      return await h.getFile();
+    }
+
+    return await new Promise((resolve) => {
+      const inp = document.createElement("input");
+      inp.type = "file";
+      inp.accept = ".gmsf,.gmf";
+      inp.onchange = () => resolve(inp.files?.[0] || null);
+      inp.click();
+    });
+  } catch (err) {
+
+    if (err?.name === "AbortError" || err?.name === "NotAllowedError") return null;
+    const msg = String(err?.message || err);
+    if (msg.toLowerCase().includes("aborted")) return null;
+    throw err;
+  }
+}
+
+function kmClone(obj) {
+  if (typeof structuredClone === "function") return structuredClone(obj);
+  return JSON.parse(JSON.stringify(obj));
+}
+
+function kmPitchIndexFromSoundPath(path) {
+  if (!path || typeof path !== "string") return null;
+  const m = path.match(/_(\d+)\.(wav|mp3|ogg|flac)$/i);
+  if (!m) return null;
+  const n = parseInt(m[1], 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function kmInferKeyFromNoteId(noteId, notePack) {
+  if (noteId === 14) return "spooky";
+  if (noteId === 19) return "festive";
+
+  const gi = notePack?.gearInfo?.[noteId];
+  const L = gi?.letter;
+
+  if (L === "P") return "piano";
+  if (L === "B") return "bass";
+  if (L === "D") return "drum";
+  if (L === "S") return "sax";
+  if (L === "F") return "flute";
+  if (L === "G") return "guitar";
+  if (L === "V") return "violin";
+  if (L === "L") return "lyre";
+  if (L === "E") return "eguitar";
+  if (L === "T") return "trumpet";
+
+  const snds = notePack?.notes?.[noteId]?.sounds;
+  if (Array.isArray(snds)) {
+    const any = (snds.find(p => typeof p === "string" && p.length) || "").toLowerCase();
+    if (any.includes("piano_")) return "piano";
+    if (any.includes("bass_")) return "bass";
+    if (any.includes("drum_")) return "drum";
+    if (any.includes("sax_")) return "sax";
+    if (any.includes("flute_")) return "flute";
+    if (any.includes("electric_guitar_")) return "eguitar";
+    if (any.includes("guitar_") || any.includes("spanish_guitar_")) return "guitar";
+    if (any.includes("violin_")) return "violin";
+    if (any.includes("lyre_")) return "lyre";
+    if (any.includes("trumpet_") || any.includes("mtrumpet_")) return "trumpet";
+    if (any.includes("spooky_")) return "spooky";
+    if (any.includes("festive_")) return "festive";
+  }
+
+  return "other";
+}
+
+function kmAccidentalRank(noteId, notePack) {
+  const a = notePack?.gearInfo?.[noteId]?.accidental;
+  if (!a) return 0;
+  const s = String(a).toLowerCase();
+  if (s.includes("sharp") || s === "#") return 1;
+  if (s.includes("flat") || s === "b") return 1;
+  return 2;
+}
+
+function kmBuildKeyPitchMap(notePack, height = 14) {
+  const map = new Map();
+  const ids = Object.keys(notePack?.notes ?? {})
+    .map(n => parseInt(n, 10))
+    .filter(n => Number.isFinite(n));
+
+  for (const noteId of ids) {
+    const key = kmInferKeyFromNoteId(noteId, notePack);
+
+    const sounds = notePack?.notes?.[noteId]?.sounds;
+    if (!Array.isArray(sounds) || sounds.length < height) continue;
+
+    if (!map.has(key)) map.set(key, new Map());
+    const byPitch = map.get(key);
+
+    const rank = kmAccidentalRank(noteId, notePack);
+
+    for (let rowY = 0; rowY < height; rowY++) {
+      const pIdx = kmPitchIndexFromSoundPath(sounds[rowY]);
+      if (pIdx == null) continue;
+
+      const cur = byPitch.get(pIdx);
+      if (!cur || rank < cur.rank) {
+        byPitch.set(pIdx, { noteId, rowY, rank });
+      }
+    }
+  }
+  return map;
+}
+
+function kmPitchBounds(byPitch) {
+  let min = Infinity, max = -Infinity;
+  for (const k of byPitch.keys()) { if (k < min) min = k; if (k > max) max = k; }
+  return { min, max };
+}
+function kmNearestPitch(byPitch, target) {
+  if (byPitch.has(target)) return target;
+  for (let d = 1; d <= 12; d++) {
+    if (byPitch.has(target - d)) return target - d;
+    if (byPitch.has(target + d)) return target + d;
+  }
+  return null;
+}
+function kmMod12(n){ const m=n%12; return m<0?m+12:m; }
+function kmPitchClassMatch(byPitch, target) {
+  const t = kmMod12(target);
+  let best = null;
+  let bestDist = 1e9;
+  for (const k of byPitch.keys()) {
+    if (kmMod12(k) !== t) continue;
+    const d = Math.abs(k - target);
+    if (d < bestDist) { bestDist = d; best = k; }
+  }
+  return best;
+}
+function kmPickPitchIndex(byPitch, pIdx, preferPitchClass) {
+  if (byPitch.has(pIdx)) return pIdx;
+  if (preferPitchClass) {
+    const pc = kmPitchClassMatch(byPitch, pIdx);
+    if (pc != null) return pc;
+  }
+  return kmNearestPitch(byPitch, pIdx);
+}
+
+function kmMakeEmptyGearCell(audioGearID, volumePct) {
+  return { id: audioGearID, volume: clamp(Math.round(volumePct), 1, 100), gearData: Array(AUDIOGEARSPACE * 2).fill(0) };
+}
+function kmGearPush(cell, noteId, rowY) {
+  const gd = cell.gearData;
+  for (let i = 0; i < AUDIOGEARSPACE; i++) {
+    const idx = i * 2;
+    if (!gd[idx]) {
+      gd[idx] = noteId;
+      gd[idx + 1] = rowY;
+      return true;
+    }
+  }
+  return false;
+}
+
+function kmOpenGmsfOctaveModal() {
+  if (typeof kmEnsureMidiModalStyles === "function") kmEnsureMidiModalStyles();
+
+  const saved = kmLoadGmsfSettings() || {};
+  const model = {
+    source: saved.source ?? "canvas",                 
+    affectEverything: saved.affectEverything ?? true, 
+    excludeSF: saved.excludeSF ?? true,               
+    octaveShift: saved.octaveShift ?? 0,
+    semitoneShift: saved.semitoneShift ?? 0,
+    rangeMode: saved.rangeMode ?? "fold",            
+    preferPitchClass: saved.preferPitchClass ?? true,
+    preserveAudioGear: saved.preserveAudioGear ?? true,
+    affect: saved.affect ?? {
+      piano: true, bass: true, violin: true, trumpet: true,
+      guitar: true, flute: true, sax: true, lyre: true,
+      eguitar: true, drum: true, other: true
+    }
+  };
+
+  const overlay = document.createElement("div");
+  overlay.className = "km-overlay";
+
+  overlay.innerHTML = `
+    <div class="km-modal" role="dialog" aria-modal="true">
+      <div class="km-head">
+        <div class="km-title">
+          <div>GMSF Octave & Mapping</div>
+          <small>Set transpose behaviour before applying</small>
+        </div>
+        <button class="km-x" id="kmGmsfClose" title="Close">✕</button>
+      </div>
+
+      <div class="km-body">
+        <div class="km-grid">
+          <div class="km-card">
+            <h4>Source</h4>
+            <div class="km-row">
+              <div>
+                <label>Apply to</label>
+                <div class="km-hint">Choose current canvas or load a .gmsf file.</div>
+              </div>
+              <select class="km-select km-small" id="kmGmsfSource">
+                <option value="canvas">Current canvas</option>
+                <option value="file">Load .gmsf file</option>
+              </select>
+            </div>
+
+            <div class="km-row">
+              <div>
+                <label>Affect everything</label>
+                <div class="km-hint">When enabled, everything is transposed except excluded items.</div>
+              </div>
+              <div class="km-switch">
+                <input class="km-toggle" id="kmGmsfAll" type="checkbox">
+              </div>
+            </div>
+
+            <div class="km-row">
+              <div>
+                <label>Exclude Spooky/Festive</label>
+                <div class="km-hint">Usually not an instrument.</div>
+              </div>
+              <div class="km-switch">
+                <input class="km-toggle" id="kmGmsfExSF" type="checkbox">
+              </div>
+            </div>
+
+            <div class="km-footnote">
+              Note: Repeat markers are preserved automatically.
+            </div>
+          </div>
+
+          <div class="km-card">
+            <h4>Transpose</h4>
+
+            <div class="km-row">
+              <div>
+                <label>Octave shift</label>
+                <div class="km-hint">Shift by ±12 semitones per octave.</div>
+              </div>
+              <select class="km-select km-small" id="kmGmsfOct">
+                ${Array.from({length: 13}, (_,i)=> i-6).map(v => `<option value="${v}">${v>=0?`+${v}`:v}</option>`).join("")}
+              </select>
+            </div>
+
+            <div class="km-row">
+              <div>
+                <label>Semitone shift</label>
+                <div class="km-hint">Fine-tune by ±1 semitone steps.</div>
+              </div>
+              <select class="km-select km-small" id="kmGmsfSemi">
+                ${Array.from({length: 23}, (_,i)=> i-11).map(v => `<option value="${v}">${v>=0?`+${v}`:v}</option>`).join("")}
+              </select>
+            </div>
+
+            <div class="km-row">
+              <div>
+                <label>Out-of-range handling</label>
+                <div class="km-hint">How to deal with notes outside GT’s mapping.</div>
+              </div>
+              <select class="km-select" id="kmGmsfRange">
+                <option value="fold">Fold (wrap by octaves)</option>
+                <option value="clamp">Clamp (nearest edge)</option>
+                <option value="drop">Drop (remove note)</option>
+              </select>
+            </div>
+
+            <div class="km-row">
+              <div>
+                <label>Preserve pitch class</label>
+                <div class="km-hint">Prevents “everything becomes C” fallbacks.</div>
+              </div>
+              <div class="km-switch">
+                <input class="km-toggle" id="kmGmsfPitchClass" type="checkbox">
+              </div>
+            </div>
+
+            <div class="km-row">
+              <div>
+                <label>Preserve Audio Gear</label>
+                <div class="km-hint">Keep gear volumes and repack collisions safely.</div>
+              </div>
+              <div class="km-switch">
+                <input class="km-toggle" id="kmGmsfPreserveGear" type="checkbox">
+              </div>
+            </div>
+
+            <div class="km-footnote" id="kmGmsfPreview"></div>
+          </div>
+
+          <div class="km-card" style="grid-column: 1 / -1;">
+            <h4>Affect instruments</h4>
+            <div class="km-hint">Only used when “Affect everything” is off.</div>
+
+            <div class="km-chips" style="margin-top:10px;">
+              <label class="km-chip"><input type="checkbox" id="kmA_piano"> Piano</label>
+              <label class="km-chip"><input type="checkbox" id="kmA_bass"> Bass</label>
+              <label class="km-chip"><input type="checkbox" id="kmA_violin"> Violin</label>
+              <label class="km-chip"><input type="checkbox" id="kmA_trumpet"> Trumpet</label>
+              <label class="km-chip"><input type="checkbox" id="kmA_guitar"> Guitar</label>
+              <label class="km-chip"><input type="checkbox" id="kmA_flute"> Flute</label>
+              <label class="km-chip"><input type="checkbox" id="kmA_sax"> Sax</label>
+              <label class="km-chip"><input type="checkbox" id="kmA_lyre"> Lyre</label>
+              <label class="km-chip"><input type="checkbox" id="kmA_eguitar"> E-Guitar</label>
+              <label class="km-chip"><input type="checkbox" id="kmA_drum"> Drum</label>
+              <label class="km-chip"><input type="checkbox" id="kmA_other"> Other</label>
+            </div>
+
+            <div class="km-footnote">
+              Tip: Keep “Affect everything” on for canvas to ensure all pages are covered.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="km-actions">
+        <button class="km-btn" id="kmGmsfCancel">Cancel</button>
+        <button class="km-btn km-btn-primary" id="kmGmsfApply">Apply</button>
+      </div>
+    </div>
+  `;
+
+  kmModalLock();
+
+  document.body.appendChild(overlay);
+  const $ = (sel) => overlay.querySelector(sel);
+
+  const elSource = $("#kmGmsfSource");
+  const elAll = $("#kmGmsfAll");
+  const elExSF = $("#kmGmsfExSF");
+
+  const elOct = $("#kmGmsfOct");
+  const elSemi = $("#kmGmsfSemi");
+  const elRange = $("#kmGmsfRange");
+  const elPC = $("#kmGmsfPitchClass");
+  const elPresGear = $("#kmGmsfPreserveGear");
+  const elPreview = $("#kmGmsfPreview");
+
+  const affects = {
+    piano: $("#kmA_piano"),
+    bass: $("#kmA_bass"),
+    violin: $("#kmA_violin"),
+    trumpet: $("#kmA_trumpet"),
+    guitar: $("#kmA_guitar"),
+    flute: $("#kmA_flute"),
+    sax: $("#kmA_sax"),
+    lyre: $("#kmA_lyre"),
+    eguitar: $("#kmA_eguitar"),
+    drum: $("#kmA_drum"),
+    other: $("#kmA_other"),
+  };
+
+  elSource.value = model.source;
+  elAll.checked = !!model.affectEverything;
+  elExSF.checked = !!model.excludeSF;
+
+  elOct.value = String(model.octaveShift);
+  elSemi.value = String(model.semitoneShift);
+  elRange.value = model.rangeMode;
+  elPC.checked = !!model.preferPitchClass;
+  elPresGear.checked = !!model.preserveAudioGear;
+
+  for (const k in affects) affects[k].checked = !!model.affect[k];
+
+  function setAffectEnabled(enabled) {
+    for (const k in affects) affects[k].disabled = !enabled;
+    for (const k in affects) {
+      affects[k].closest("label")?.style?.setProperty("opacity", enabled ? "1" : ".45");
+      affects[k].closest("label")?.style?.setProperty("cursor", enabled ? "pointer" : "not-allowed");
+    }
+  }
+
+  function updatePreview() {
+    const oct = parseInt(elOct.value, 10) || 0;
+    const semi = parseInt(elSemi.value, 10) || 0;
+    const total = (oct * 12) + semi;
+
+    const all = elAll.checked;
+    setAffectEnabled(!all);
+
+    elPreview.textContent =
+      `Total shift: ${total>=0?`+${total}`:total} semitones • Range: ${elRange.value} • Pitch class: ${elPC.checked ? "ON" : "OFF"} • Preserve gear: ${elPresGear.checked ? "ON" : "OFF"}`;
+  }
+  updatePreview();
+
+  ["change","input"].forEach(ev => {
+    elSource.addEventListener(ev, updatePreview);
+    elAll.addEventListener(ev, updatePreview);
+    elExSF.addEventListener(ev, updatePreview);
+
+    elOct.addEventListener(ev, updatePreview);
+    elSemi.addEventListener(ev, updatePreview);
+    elRange.addEventListener(ev, updatePreview);
+    elPC.addEventListener(ev, updatePreview);
+    elPresGear.addEventListener(ev, updatePreview);
+    for (const k in affects) affects[k].addEventListener(ev, updatePreview);
+  });
+
+  let _kmMidiClosed = false;
+  function close() {
+    if (_kmMidiClosed) return;
+    _kmMidiClosed = true;
+    document.removeEventListener("keydown", onKey);
+    try { overlay.remove(); } catch {}
+    kmModalUnlock();
+  }
+  function onKey(e){ if (e.key === "Escape") close(); }
+  document.addEventListener("keydown", onKey);
+  overlay.addEventListener("mousedown", (e) => { if (e.target === overlay) close(); });
+
+  $("#kmGmsfClose").onclick = close;
+  $("#kmGmsfCancel").onclick = close;
+
+  $("#kmGmsfApply").onclick = async () => {
+    try {
+      const source = elSource.value;
+      const affectEverything = !!elAll.checked;
+      const excludeSF = !!elExSF.checked;
+
+      const octaveShift = parseInt(elOct.value, 10) || 0;
+      const semitoneShift = parseInt(elSemi.value, 10) || 0;
+      const totalShift = (octaveShift * 12) + semitoneShift;
+
+      const rangeMode = elRange.value;
+      const preferPitchClass = !!elPC.checked;
+      const preserveAudioGear = !!elPresGear.checked;
+
+      let affect = {};
+      if (affectEverything) {
+        affect = {
+          piano:true, bass:true, violin:true, trumpet:true,
+          guitar:true, flute:true, sax:true, lyre:true,
+          eguitar:true, drum:true, other:true,
+          spooky: !excludeSF,
+          festive: !excludeSF,
+        };
+        if (excludeSF) { affect.spooky = false; affect.festive = false; }
+      } else {
+        for (const k in affects) affect[k] = !!affects[k].checked;
+        if (excludeSF) { affect.spooky = false; affect.festive = false; }
+      }
+
+      kmSaveGmsfSettings({
+        source,
+        affectEverything,
+        excludeSF,
+        octaveShift,
+        semitoneShift,
+        rangeMode,
+        preferPitchClass,
+        preserveAudioGear,
+        affect
+      });
+
+      let baseState;
+      let displayName = "GMSF Transform";
+
+      if (source === "file") {
+        const f = await kmPickGmsfFile();
+        if (!f) return;
+
+        const ab = await f.arrayBuffer(); 
+        let parsed;
+
+        try {
+          parsed = parseGmsfV1(ab);
+        } catch {
+          try {
+            parsed = parseGmsfV1(new Uint8Array(ab));
+          } catch {
+            const txt = new TextDecoder().decode(new Uint8Array(ab));
+            parsed = parseGmsfV1(txt);
+          }
+        }
+
+        baseState = {
+          bpm: parsed.bpm,
+          height: parsed.height,
+          width: parsed.width,
+          audioGearID: parsed.audioGearID,
+          grid: parsed.grid,
+          metadata: parsed.metadata ?? ""
+        };
+        displayName = `GMSF File: ${f.name}`;
+      } else {
+        baseState = kmClone(state);
+        displayName = "Current canvas";
+      }
+
+      const out = kmTransposeGmsfState(baseState, NOTE_PACK, {
+        totalShift,
+        rangeMode,
+        preferPitchClass,
+        preserveAudioGear,
+        affect
+      });
+
+      applyImportedSong({
+        ver: 1,
+        audioGearID: out.audioGearID,
+        bpm: out.bpm,
+        width: out.width,
+        height: out.height,
+        metadata: out.metadata,
+        grid: out.grid,
+      }, `${displayName} (transpose)`);
+
+      statusEl.textContent = `Applied transpose ✅ (${totalShift>=0?`+${totalShift}`:totalShift} semitones)`;
+      close();
+    } catch (err) {
+      if (err?.name === "AbortError" || err?.name === "NotAllowedError") return;
+      const msg = String(err?.message || err);
+      if (msg.toLowerCase().includes("aborted")) return;
+      alert(String(err));
+    }
+  };
+}
+
+function kmTransposeGmsfState(inState, notePack, opt) {
+  const s = kmClone(inState);
+  const H = s.height;
+  const W = s.width;
+
+  const RS = notePack.repeatStartID;
+  const RE = notePack.repeatEndID;
+  const audioGearID = notePack.audioGearID ?? s.audioGearID;
+
+  const totalShift = opt.totalShift | 0;
+  const rangeMode = opt.rangeMode; 
+  const preferPitchClass = !!opt.preferPitchClass;
+  const preserveAudioGear = !!opt.preserveAudioGear;
+  const affect = opt.affect || {};
+
+  const keyPitchMap = kmBuildKeyPitchMap(notePack, H);
+
+  function transposeOne(key, noteId, rowY) {
+    const sounds = notePack?.notes?.[noteId]?.sounds;
+    if (!Array.isArray(sounds)) return null;
+
+    const pIdx = kmPitchIndexFromSoundPath(sounds[rowY]);
+    if (pIdx == null) return null;
+
+    const byPitch = keyPitchMap.get(key);
+    if (!byPitch || byPitch.size === 0) return null;
+
+    let pNew = pIdx + totalShift;
+    const { min, max } = kmPitchBounds(byPitch);
+    if (!Number.isFinite(min)) return null;
+
+    if (rangeMode === "fold") {
+      while (pNew < min) pNew += 12;
+      while (pNew > max) pNew -= 12;
+    } else if (rangeMode === "clamp") {
+      pNew = clamp(pNew, min, max);
+    } else if (rangeMode === "drop") {
+      if (pNew < min || pNew > max) return { drop: true };
+    }
+
+    const use = kmPickPitchIndex(byPitch, pNew, preferPitchClass);
+    if (use == null) return null;
+
+    const pick = byPitch.get(use);
+    return { noteId: pick.noteId, rowY: pick.rowY };
+  }
+
+  for (let x = 0; x < W; x++) {
+    const reservedRows = new Set();
+    const markers = [];
+    const extracted = []; 
+
+    for (let y = 0; y < H; y++) {
+      const cell = s.grid[y][x];
+      if (!cell) continue;
+
+      if (typeof cell === "number" && (cell === RS || cell === RE)) {
+        reservedRows.add(y);
+        markers.push({ y, id: cell });
+        continue;
+      }
+
+      if (typeof cell === "object" && cell?.id === audioGearID) {
+        const vol = clamp(cell.volume ?? 100, 1, 100);
+        const gd = cell.gearData;
+
+        if (Array.isArray(gd) && gd.length >= AUDIOGEARSPACE * 2) {
+          for (let i = 0; i < AUDIOGEARSPACE; i++) {
+            const noteId = gd[i * 2];
+            const rowY = gd[i * 2 + 1];
+            if (!noteId) continue;
+
+            const key = kmInferKeyFromNoteId(noteId, notePack);
+            const doAffect = affectEverythingFallback(affect, key);
+
+            if (!doAffect) {
+              extracted.push({ noteId, rowY, volPct: vol, key, sourceKind: "gear" });
+              continue;
+            }
+
+            const t = transposeOne(key, noteId, rowY);
+            if (!t || t.drop) continue;
+
+            extracted.push({ noteId: t.noteId, rowY: t.rowY, volPct: vol, key, sourceKind: "gear" });
+          }
+        }
+        continue;
+      }
+
+      if (typeof cell === "number") {
+        const noteId = cell;
+        const key = kmInferKeyFromNoteId(noteId, notePack);
+        const doAffect = affectEverythingFallback(affect, key);
+
+        if (!doAffect) {
+          extracted.push({ noteId, rowY: y, volPct: 100, key, sourceKind: "plain" });
+          continue;
+        }
+
+        const t = transposeOne(key, noteId, y);
+        if (!t || t.drop) continue;
+
+        extracted.push({ noteId: t.noteId, rowY: t.rowY, volPct: 100, key, sourceKind: "plain" });
+      }
+    }
+
+    for (let y = 0; y < H; y++) s.grid[y][x] = 0;
+
+    const plainRows = new Set();
+    const plain = [];
+    const groups = new Map(); 
+
+    function addToGroup(volPct, noteId, rowY) {
+      if (!groups.has(volPct)) groups.set(volPct, []);
+      groups.get(volPct).push({ noteId, rowY });
+    }
+
+    for (const n of extracted) {
+      const mustGear = (n.volPct !== 100) || (preserveAudioGear && n.sourceKind === "gear");
+      if (!mustGear && !reservedRows.has(n.rowY) && !plainRows.has(n.rowY)) {
+        plainRows.add(n.rowY);
+        plain.push({ noteId: n.noteId, rowY: n.rowY });
+      } else {
+        addToGroup(n.volPct, n.noteId, n.rowY);
+      }
+    }
+
+    for (const pn of plain) {
+      if (!reservedRows.has(pn.rowY) && s.grid[pn.rowY][x] === 0) {
+        s.grid[pn.rowY][x] = pn.noteId;
+      } else {
+        addToGroup(100, pn.noteId, pn.rowY);
+      }
+    }
+
+    const hostRows = [];
+    for (let y = H - 1; y >= 0; y--) {
+      if (!reservedRows.has(y) && s.grid[y][x] === 0) hostRows.push(y);
+    }
+
+    const vols = [...groups.keys()].sort((a, b) => a - b);
+    for (const vol of vols) {
+      const arr = groups.get(vol);
+      if (!arr || !arr.length) continue;
+
+      let idx = 0;
+      while (idx < arr.length) {
+        if (hostRows.length === 0) break;
+        const hostY = hostRows.shift();
+        const cell = kmMakeEmptyGearCell(audioGearID, vol);
+
+        let filled = 0;
+        while (filled < AUDIOGEARSPACE && idx < arr.length) {
+          const it = arr[idx++];
+          if (kmGearPush(cell, it.noteId, it.rowY)) filled++;
+        }
+
+        s.grid[hostY][x] = cell;
+      }
+    }
+
+    for (const m of markers) {
+      if (s.grid[m.y][x] === 0) s.grid[m.y][x] = m.id;
+    }
+  }
+
+  const sign = totalShift >= 0 ? `+${totalShift}` : `${totalShift}`;
+  s.metadata = (s.metadata ? (s.metadata + "\n") : "") + `GMSF transpose applied: ${sign} semitones`;
+  return s;
+
+  function affectEverythingFallback(aff, key) {
+    if (Object.prototype.hasOwnProperty.call(aff, key)) return !!aff[key];
+    return true;
+  }
+}
+
+
+
+function kmOpenMidiImportModal() {
+  kmEnsureMidiModalStyles();
+
+  const saved = kmLoadMidiSettings() || {};
+  const model = {
+    baseMode: saved.baseMode ?? "auto",    
+    octaveShift: saved.octaveShift ?? 0,   
+    quantize: saved.quantize ?? "nearest",  
+    fitOctave: saved.fitOctave ?? true,
+    compressSilence: saved.compressSilence ?? true,
+    velTolerance100: saved.velTolerance100 ?? 1,
+
+    excludeSpookyFestive: saved.excludeSpookyFestive ?? true,
+
+    forceViolin: saved.forceViolin ?? true,
+    forceTrumpet: saved.forceTrumpet ?? true,
+    forceDrum: saved.forceDrum ?? true,
+  };
+
+  const overlay = document.createElement("div");
+  overlay.className = "km-overlay";
+
+  overlay.innerHTML = `
+    <div class="km-modal" role="dialog" aria-modal="true">
+      <div class="km-head">
+        <div class="km-title">
+          <div>MIDI → GMSF Import</div>
+          <small>Set the octave and mapping behaviour before applying</small>
+        </div>
+        <button class="km-x" id="kmMidiClose" title="Close">✕</button>
+      </div>
+
+      <div class="km-body">
+        <div class="km-grid">
+          <div class="km-card">
+            <h4>Pitch & Quantize</h4>
+
+            <div class="km-row">
+              <div>
+                <label>Base MIDI (C)</label>
+                <div class="km-hint">Auto is usually the safest option. C4 = 60.</div>
+              </div>
+              <select class="km-select" id="kmBaseMode">
+                <option value="auto">Auto (best-fit)</option>
+                <option value="36">C2 (36)</option>
+                <option value="48">C3 (48)</option>
+                <option value="60">C4 (60)</option>
+                <option value="72">C5 (72)</option>
+                <option value="84">C6 (84)</option>
+              </select>
+            </div>
+
+            <div class="km-row">
+              <div>
+                <label>Transpose (octave shift)</label>
+                <div class="km-hint">Shift +/− octave after base.</div>
+              </div>
+              <select class="km-select km-small" id="kmOctShift">
+                ${Array.from({length: 13}, (_,i)=> i-6).map(v => `<option value="${v}">${v>=0?`+${v}`:v}</option>`).join("")}
+              </select>
+            </div>
+
+            <div class="km-row">
+              <div>
+                <label>Quantize</label>
+                <div class="km-hint">Nearest is most similar; Floor is more ‘rigid’.</div>
+              </div>
+              <select class="km-select km-small" id="kmQuantize">
+                <option value="nearest">Nearest</option>
+                <option value="floor">Floor</option>
+              </select>
+            </div>
+
+            <div class="km-row">
+              <div>
+                <label>Fit Octave (fold to 2 octaves GT)</label>
+                <div class="km-hint">ON: out-of-range tones are folded per 12.</div>
+              </div>
+              <div class="km-switch">
+                <input class="km-toggle" id="kmFitOct" type="checkbox">
+              </div>
+            </div>
+
+            <div class="km-row">
+              <div>
+                <label>velTolerance→100</label>
+                <div class="km-hint">0–5: those approaching the baseline are considered 100.</div>
+              </div>
+              <input class="km-input km-small" id="kmVelTol" type="number" min="0" max="5" step="1">
+            </div>
+
+            <div class="km-footnote" id="kmPreviewText"></div>
+          </div>
+
+          <div class="km-card">
+            <h4>Audio & Space Saver</h4>
+
+            <div class="km-row">
+              <div>
+                <label>Compress Silence (stacked repeats)</label>
+                <div class="km-hint">Save empty columns without changing the duration.</div>
+              </div>
+              <div class="km-switch">
+                <input class="km-toggle" id="kmCompress" type="checkbox">
+              </div>
+            </div>
+
+            <div class="km-row">
+              <div>
+                <label>Exclude Spooky/Festive</label>
+                <div class="km-hint">Usually not an instrument (skip export).</div>
+              </div>
+              <div class="km-switch">
+                <input class="km-toggle" id="kmExcludeSF" type="checkbox">
+              </div>
+            </div>
+
+            <div style="margin-top:10px;">
+              <label style="font-size:13px; opacity:.82;">Force into Audio Gear (volume 1:1)</label>
+              <div class="km-hint">The instrument is forced into the Audio Gear so that the volume can be saved.</div>
+
+              <div class="km-chips" style="margin-top:8px;">
+                <label class="km-chip">
+                  <input type="checkbox" id="kmForceViolin">
+                  Violin
+                </label>
+                <label class="km-chip">
+                  <input type="checkbox" id="kmForceTrumpet">
+                  Trumpet
+                </label>
+                <label class="km-chip">
+                  <input type="checkbox" id="kmForceDrum">
+                  Drum
+                </label>
+              </div>
+            </div>
+
+            <div class="km-footnote">
+              Tip: If your bass/piano often ‘goes up an octave’, try Base C3/C2 or octave shift −1.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="km-actions">
+        <button class="km-btn" id="kmMidiCancel">Cancel</button>
+        <button class="km-btn km-btn-primary" id="kmMidiApply">Apply</button>
+      </div>
+    </div>
+  `;
+
+  kmModalLock();
+
+  document.body.appendChild(overlay);
+
+  const $ = (id) => overlay.querySelector(id);
+
+  const elBase = $("#kmBaseMode");
+  const elShift = $("#kmOctShift");
+  const elQuant = $("#kmQuantize");
+  const elFit = $("#kmFitOct");
+  const elComp = $("#kmCompress");
+  const elTol = $("#kmVelTol");
+  const elEx = $("#kmExcludeSF");
+  const elFViolin = $("#kmForceViolin");
+  const elFTrumpet = $("#kmForceTrumpet");
+  const elFDrum = $("#kmForceDrum");
+  const elPreview = $("#kmPreviewText");
+
+  elBase.value = model.baseMode;
+  elShift.value = String(model.octaveShift);
+  elQuant.value = model.quantize;
+  elFit.checked = !!model.fitOctave;
+  elComp.checked = !!model.compressSilence;
+  elTol.value = String(model.velTolerance100);
+  elEx.checked = !!model.excludeSpookyFestive;
+  elFViolin.checked = !!model.forceViolin;
+  elFTrumpet.checked = !!model.forceTrumpet;
+  elFDrum.checked = !!model.forceDrum;
+  
+  function computeEffectiveBase() {
+    const shift = parseInt(elShift.value, 10) || 0;
+    if (elBase.value === "auto") return { baseMidi: "auto", shift };
+    const base = parseInt(elBase.value, 10) || 60;
+    return { baseMidi: base + (shift * 12), shift };
+  }
+
+  function updatePreview() {
+    const { baseMidi, shift } = computeEffectiveBase();
+    const q = elQuant.value;
+    const fit = elFit.checked;
+    const comp = elComp.checked;
+    const tol = parseInt(elTol.value, 10) || 0;
+
+    const baseText = (baseMidi === "auto")
+      ? `Base: Auto (best-fit) + shift ${shift>=0?`+${shift}`:shift} oct`
+      : `Base: ${baseMidi} (C${Math.round((baseMidi/12)-1)})  shift ${shift>=0?`+${shift}`:shift} oct`;
+
+    elPreview.textContent =
+      `${baseText} • Quantize: ${q} • FitOctave: ${fit ? "ON" : "OFF"} • CompressSilence: ${comp ? "ON" : "OFF"} • velTol: ${tol}`;
+  }
+
+  updatePreview();
+  ["change","input"].forEach(ev => {
+    elBase.addEventListener(ev, updatePreview);
+    elShift.addEventListener(ev, updatePreview);
+    elQuant.addEventListener(ev, updatePreview);
+    elFit.addEventListener(ev, updatePreview);
+    elComp.addEventListener(ev, updatePreview);
+    elTol.addEventListener(ev, updatePreview);
+    elEx.addEventListener(ev, updatePreview);
+    elFViolin.addEventListener(ev, updatePreview);
+    elFTrumpet.addEventListener(ev, updatePreview);
+    elFDrum.addEventListener(ev, updatePreview);
+  });
+
+  let _kmGmsfClosed = false;
+  function close() {
+    if (_kmGmsfClosed) return;
+    _kmGmsfClosed = true;
+    document.removeEventListener("keydown", onKey);
+    try { overlay.remove(); } catch {}
+    kmModalUnlock();
+  }
+
+  function onKey(e) {
+    if (e.key === "Escape") close();
+  }
+  document.addEventListener("keydown", onKey);
+
+  overlay.addEventListener("mousedown", (e) => {
+    if (e.target === overlay) close(); 
+  });
+
+  $("#kmMidiClose").onclick = close;
+  $("#kmMidiCancel").onclick = close;
+
+  $("#kmMidiApply").onclick = async () => {
+    try {
+      const { baseMidi } = computeEffectiveBase();
+      const quantize = elQuant.value;
+      const fitOctave = !!elFit.checked;
+      const compressSilence = !!elComp.checked;
+      const velTolerance100 = clamp(parseInt(elTol.value, 10) || 0, 0, 5);
+
+      const excludeKeys = elEx.checked ? ["spooky", "festive"] : [];
+      const forceGearKeys = [];
+      if (elFViolin.checked) forceGearKeys.push("violin");
+      if (elFTrumpet.checked) forceGearKeys.push("trumpet");
+      if (elFDrum.checked) forceGearKeys.push("drum");
+
+      kmSaveMidiSettings({
+        baseMode: elBase.value,
+        octaveShift: parseInt(elShift.value, 10) || 0,
+        quantize,
+        fitOctave,
+        compressSilence,
+        velTolerance100,
+        excludeSpookyFestive: elEx.checked,
+        forceViolin: elFViolin.checked,
+        forceTrumpet: elFTrumpet.checked,
+        forceDrum: elFDrum.checked,
+      });
+
+      const f = await kmPickMidiFile();
+      if (!f) return;
+
+      const ab = await f.arrayBuffer();
+
+      const { state: importedState, stats } = midiArrayBufferToGmsfState(ab, NOTE_PACK, {
+        quantize,
+        baseMidi,
+        fitOctave,
+        compressSilence,
+        excludeKeys,
+        forceGearKeys,
+        velTolerance100,
+      });
+
+      applyImportedSong({
+        ver: 1,
+        audioGearID: importedState.audioGearID,
+        bpm: importedState.bpm,
+        width: importedState.width,
+        height: importedState.height,
+        metadata: importedState.metadata,
+        grid: importedState.grid,
+      }, `MIDI Import: ${f.name}`);
+
+      statusEl.textContent = `Loaded MIDI ✅ (BPM ${stats.bpm}, base ${stats.baseMidi}, width ${stats.width})`;
+      close();
+    } catch (err) {
+      alert(String(err));
+    }
+  };
+}
+
+
+async function pickMidiFile() {
+  if ("showOpenFilePicker" in window && window.isSecureContext) {
+    const [h] = await window.showOpenFilePicker({
+      types: [{ description: "MIDI", accept: { "audio/midi": [".mid", ".midi"] } }],
+      multiple: false
+    });
+    const f = await h.getFile();
+    return f;
+  }
+
+  return await new Promise((resolve, reject) => {
+    const inp = document.createElement("input");
+    inp.type = "file";
+    inp.accept = ".mid,.midi";
+    inp.onchange = () => resolve(inp.files?.[0] || null);
+    inp.click();
+  });
+}
+
+async function convertMidiToCanvasOnly() {
+  const f = await pickMidiFile();
+  if (!f) return;
+
+  const ab = await f.arrayBuffer();
+
+    const { state: importedState, stats } = midiArrayBufferToGmsfState(ab, NOTE_PACK, {
+      quantize: "nearest",
+      baseMidi: "auto",
+      fitOctave: true,
+      excludeKeys: ["spooky", "festive"],
+      compressSilence: true,
+      velTolerance100: 2, 
+    });
+
+  applyImportedSong({
+    ver: 1,
+    audioGearID: importedState.audioGearID,
+    bpm: importedState.bpm,
+    width: importedState.width,
+    height: importedState.height,
+    metadata: importedState.metadata,
+    grid: importedState.grid,
+  }, `MIDI Import: ${f.name}`);
+
+  statusEl.textContent = `Loaded MIDI ✅ (BPM ${stats.bpm}, base ${stats.baseMidi}, width ${stats.width})`;
+}
+
+
+async function convertMidiToGmsfDownloadAndLoad() {
+  const f = await pickMidiFile(); 
+  if (!f) return;
+
+  const ab = await f.arrayBuffer();
+
+    const { state: importedState, stats } = midiArrayBufferToGmsfState(ab, NOTE_PACK, {
+      quantize: "nearest",
+      baseMidi: "auto",
+      fitOctave: true,
+      excludeKeys: ["spooky", "festive"],
+      compressSilence: true,
+      velTolerance100: 2, 
+    });
+
+
+  const gmsfBytes = writeGmsfV1(importedState); 
+  const filename = (f.name.replace(/\.(mid|midi)$/i, "") || "song") + ".gmsf";
+  download(gmsfBytes, filename); 
+
+  applyImportedSong({
+    ver: 1,
+    audioGearID: importedState.audioGearID,
+    bpm: importedState.bpm,
+    width: importedState.width,
+    height: importedState.height,
+    metadata: importedState.metadata,
+    grid: importedState.grid,
+  }, `MIDI Import: ${f.name}`);
+
+  statusEl.textContent = `MIDI→GMSF ✅ (BPM ${stats.bpm}, base ${stats.baseMidi}, width ${stats.width})`;
+}
+
+
+if (btnMidiToGmsf) {
+  btnMidiToGmsf.onclick = () => {
+    kmOpenMidiImportModal();
+  };
+}
+
+
+
+function makeSuggestedMidiFilename() {
+  const raw = String((state?.metadata ?? "")).trim();
+  const firstLine = raw.split(/\r?\n/)[0] || "";
+  const cleaned = firstLine
+    .replace(/[\\\/:*?"<>|]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60);
+  return (cleaned ? cleaned : "song") + ".mid";
+}
+
+async function exportAsMidi() {
+
+  const masterVol = 100; 
+
+const bytes = gmsfStateToMidiBytes(state, NOTE_PACK, {
+  ppqn: 480,
+  baseMidi: 50,
+  startX: 0,
+  maxX: maxX ?? (state.width - 1),
+
+  masterVol: 100,
+  gate: 1,
+
+  pianoBoost: 2.0,        
+  pianoLayer: true,       
+  pianoProgram: 1,        
+  pianoLayerProgram: 0,   
+  pianoLenSteps: 2,       
+  pianoChannelVol: 127,
+  otherChannelVol: 96,    
+  excludeKeys: ["spooky", "festive"],
+});
+
+
+  const filename = makeSuggestedMidiFilename();
+
+  if ("showSaveFilePicker" in window && window.isSecureContext) {
+    try {
+      const h = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{
+          description: "MIDI File",
+          accept: { "audio/midi": [".mid", ".midi"] }
+        }]
+      });
+      await writeToHandle(h, bytes);
+      statusEl.textContent = "Exported MIDI ✅";
+      return;
+    } catch (err) {
+      if (err?.name === "AbortError") return;
+      throw err;
+    }
+  }
+
+  downloadMidi(bytes, filename);
+  statusEl.textContent = "Exported MIDI ✅";
+}
+
+
 
 
 async function saveOverwrite() {
@@ -3496,7 +6293,6 @@ async function saveOverwrite() {
   statusEl.textContent = "Saved locally (autosave) ✅";
 }
 
-// ===== undo/redo (cell-based + multi) =====
 function cloneCell(cell) {
   if (typeof cell === "number") return cell;
   return {
@@ -3591,7 +6387,6 @@ function redo() {
   scheduleAutosave();
 }
 
-// ===== Paste with fixed Y =====
 function pasteClipAtFixedYWithHistory(anchorX, clip) {
   if (!clip || !clip.cells) return false;
 
@@ -3629,7 +6424,6 @@ function pasteClipAtFixedYWithHistory(anchorX, clip) {
   return changes.length > 0;
 }
 
-// ===== Drag paint session =====
 function beginPaintSession() {
   isPainting = true;
   paintChanges.clear();
@@ -3695,14 +6489,70 @@ async function paintAt(ax, y, isRight, doSound) {
   paintStarted = true;
 }
 
-/* =======================
-   Drawing
-   ======================= */
+function drawRowLabelSidebar(ctx2, rows, tileSize, labelWidth, totalHeight) {
+  const dark = isDarkUiTheme();
+
+  ctx2.save();
+  ctx2.fillStyle = dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)";
+  ctx2.fillRect(0, 0, labelWidth, totalHeight);
+
+  ctx2.strokeStyle = dark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.10)";
+  ctx2.lineWidth = 1;
+  ctx2.beginPath();
+
+  const totalRows = rows + FOOTER_HEIGHT_TILES;
+  for (let y = 0; y <= totalRows; y++) {
+    const py = y * tileSize + 0.5;
+    ctx2.moveTo(0, py);
+    ctx2.lineTo(labelWidth, py);
+  }
+
+  ctx2.moveTo(0.5, 0);
+  ctx2.lineTo(0.5, totalRows * tileSize);
+
+  ctx2.stroke();
+
+  for (let y = 0; y < rows; y++) {
+    const label = ROW_LABELS[y] ?? "";
+    const cy = (y + 0.5) * tileSize;
+    drawThemedLabelText(ctx2, label, LABEL_PAD_X, cy, "left", dark);
+  }
+
+  ctx2.lineWidth = 4;
+  ctx2.strokeStyle = dark ? "rgba(240,244,255,0.22)" : "rgba(0,0,0,0.70)";
+  ctx2.beginPath();
+  ctx2.moveTo(labelWidth + 0.5, 0);
+  ctx2.lineTo(labelWidth + 0.5, totalHeight);
+  ctx2.stroke();
+
+  ctx2.restore();
+}
+
+function drawSidebarSeparator(ctx2, labelWidth, totalHeight) {
+  ctx2.save();
+  ctx2.lineWidth = 4;
+  ctx2.strokeStyle = "rgba(0,0,0,0.75)";
+  ctx2.beginPath();
+  ctx2.moveTo(labelWidth + 0.5, 0);
+  ctx2.lineTo(labelWidth + 0.5, totalHeight);
+  ctx2.stroke();
+  ctx2.restore();
+}
+
 function renderBase() {
   if (baseLayer.width !== cv.width) baseLayer.width = cv.width;
   if (baseLayer.height !== cv.height) baseLayer.height = cv.height;
 
   baseCtx.clearRect(0, 0, baseLayer.width, baseLayer.height);
+
+  drawRowLabelSidebar(baseCtx, state.height, TILE, LABEL_WIDTH, cv.height);
+
+  baseCtx.save();
+  baseCtx.translate(LABEL_WIDTH, 0);
+
+  const _uiDark = isDarkUiTheme();
+  const _gridStroke = getGridStrokeForCurrentCanvasTheme();
+
 
   drawCanvasThemeBackground(baseCtx);
 
@@ -3723,34 +6573,62 @@ function renderBase() {
           }
         }
       }
-
-      baseCtx.strokeStyle = "rgba(0,0,0,0.08)";
-      baseCtx.strokeRect(vx * TILE, y * TILE, TILE, TILE);
     }
   }
 
-  const labelY = state.height * TILE;
-  baseCtx.fillStyle = "rgba(0,0,0,0.04)";
-  baseCtx.fillRect(0, labelY, pageWidth * TILE, TILE);
+  baseCtx.save();
+  baseCtx.strokeStyle = _gridStroke;
+  baseCtx.lineWidth = 1;
+  baseCtx.beginPath();
+
+  for (let y = 0; y <= state.height; y++) {
+    const py = y * TILE + 0.5;
+    baseCtx.moveTo(0, py);
+    baseCtx.lineTo(pageWidth * TILE, py);
+  }
+
+  for (let vx = 0; vx <= pageWidth; vx++) {
+    const px = vx * TILE + 0.5;
+    baseCtx.moveTo(px, 0);
+    baseCtx.lineTo(px, state.height * TILE);
+  }
+
+  baseCtx.stroke();
+  baseCtx.restore();
+
+  const footerY = state.height * TILE;
+  const footerH = FOOTER_HEIGHT_TILES * TILE;
+
+  baseCtx.fillStyle = _uiDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.03)";
+  baseCtx.fillRect(0, footerY, pageWidth * TILE, footerH);
 
   baseCtx.save();
-  baseCtx.font = "700 12px system-ui, Arial";
-  baseCtx.fillStyle = "rgba(0,0,0,0.55)";
-  baseCtx.textAlign = "center";
-  baseCtx.textBaseline = "middle";
+  baseCtx.strokeStyle = _uiDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.12)";
+  baseCtx.lineWidth = 1;
+  baseCtx.beginPath();
+
+  baseCtx.moveTo(0, footerY + 0.5);
+  baseCtx.lineTo(pageWidth * TILE, footerY + 0.5);
+
+  for (let vx = 0; vx <= pageWidth; vx++) {
+    const px = vx * TILE + 0.5;
+    baseCtx.moveTo(px, footerY);
+    baseCtx.lineTo(px, footerY + footerH);
+  }
+
+  baseCtx.moveTo(0, footerY + footerH + 0.5);
+  baseCtx.lineTo(pageWidth * TILE, footerY + footerH + 0.5);
+
+  baseCtx.stroke();
+  baseCtx.restore();
 
   for (let vx = 0; vx < pageWidth; vx++) {
-    const label = String.fromCharCode(65 + vx);
+    const label = COL_LABELS[vx] ?? String.fromCharCode(65 + vx);
     const cx = vx * TILE + TILE / 2;
-    const cy = labelY + TILE / 2;
-    baseCtx.fillText(label, cx, cy);
-
-    baseCtx.strokeStyle = "rgba(0,0,0,0.06)";
-    baseCtx.beginPath();
-    baseCtx.moveTo(vx * TILE + 0.5, labelY);
-    baseCtx.lineTo(vx * TILE + 0.5, labelY + TILE);
-    baseCtx.stroke();
+    const cy = footerY + footerH / 2;
+    drawThemedLabelText(baseCtx, label, cx, cy, "center", _uiDark);
   }
+
   baseCtx.restore();
 
   baseDirty = false;
@@ -3761,6 +6639,9 @@ function drawFrame() {
 
   ctx.clearRect(0, 0, cv.width, cv.height);
   ctx.drawImage(baseLayer, 0, 0);
+
+  ctx.save();
+  ctx.translate(LABEL_WIDTH, 0);
 
   if (selectionMode && (isSelecting || hasSelection())) {
     ctx.fillStyle = "rgba(0, 120, 255, 0.06)";
@@ -3825,6 +6706,10 @@ function drawFrame() {
     }
   }
 
+  ctx.restore();
+
+  drawSidebarSeparator(ctx, LABEL_WIDTH, cv.height);
+
   const from = songXOffset + 1;
   const to = Math.min(songXOffset + pageWidth, state.width);
   hud.textContent = `View: ${from}-${to}/${state.width} | BPM: ${state.bpm} | maxX: ${maxX + 1}`;
@@ -3879,10 +6764,6 @@ function syncPaletteSelection() {
   }
 }
 
-/* =========================================================
-   HOTKEY EDITOR
-   ========================================================= */
-
 const btnHotkeys = document.getElementById("btnHotkeys");
 
 const _hotkeyStatus = (typeof showStatus === "function")
@@ -3892,22 +6773,19 @@ const _hotkeyStatus = (typeof showStatus === "function")
 const HOTKEYS_KEY = "gmsf_note_hotkeys_v2";
 
 const RESERVED_CODES = new Set([
-  "Space",        // Play/Stop
-  "KeyP",         // Pause/Resume
-  "ArrowLeft", "ArrowRight", // paging
-  "KeyB",         // close gear modal
-  "Escape",       // cancel UI
-  "KeyO", "KeyS", "KeyZ", "KeyY", "KeyC", "KeyV", "KeyA", // Ctrl combos
+  "Space",        
+  "KeyP",         
+  "ArrowLeft", "ArrowRight",
+  "KeyB",         
+  "Escape",       
+  "KeyO", "KeyS", "KeyZ", "KeyY", "KeyC", "KeyV", "KeyA", 
 ]);
 
-// mapping noteId -> code (event.code)
 let noteHotkeys = loadNoteHotkeys();
 
-// state modal
 let hotkeyModalOpen = false;
 let captureNoteId = null;
 
-// ---------- data helpers ----------
 function loadNoteHotkeys(){
   try {
     const raw = localStorage.getItem(HOTKEYS_KEY);
@@ -3966,10 +6844,9 @@ function getNoteGroupKey(noteId){
     };
     return map[L] || "Other";
   }
-  // special by id
+
   if (noteId === NOTE_PACK?.repeatStartID || noteId === NOTE_PACK?.repeatEndID) return "Repeat";
   if (noteId === NOTE_PACK?.audioGearID || noteId === state?.audioGearID) return "Audio Rack";
-  // fallback by image name
   const img = String(NOTE_PACK?.notes?.[noteId]?.image || "").toLowerCase();
   if (img.includes("spooky")) return "Spooky";
   if (img.includes("festive")) return "Festive";
@@ -4006,7 +6883,6 @@ function buildHotkeyGroups(){
   return result;
 }
 
-// ---------- modal DOM ----------
 function ensureHotkeyModal(){
   if (document.getElementById("hotkeyBack")) return;
 
@@ -4168,13 +7044,10 @@ function ensureHotkeyModal(){
   back.appendChild(modal);
   document.body.appendChild(back);
 
-  // close by click outside
   back.addEventListener("click", (e)=>{ if(e.target===back) closeHotkeyModal(); });
 
-  // close btn
   modal.querySelector("#hkClose").onclick = closeHotkeyModal;
 
-  // reset
   modal.querySelector("#hkReset").onclick = () => {
     if (!confirm("Reset all hotkeys?")) return;
     noteHotkeys = {};
@@ -4186,7 +7059,6 @@ function ensureHotkeyModal(){
 }
 
 function hkAlert(message, kind = "info") {
-  // kind: "info" | "ok" | "err"
   const back = document.getElementById("hotkeyBack");
   const modal = document.getElementById("hotkeyModal");
   if (!back || !modal) {
@@ -4212,7 +7084,7 @@ function hkAlert(message, kind = "info") {
     display:flex;
     align-items:center;
     justify-content:center;
-    z-index: 999; /* di atas hotkey modal */
+    z-index: 999;
     background: rgba(0,0,0,.18);
     padding: 12px;
   `;
@@ -4262,7 +7134,6 @@ function hkAlert(message, kind = "info") {
     if (e.target === alertBack) close();
   });
 
-  // ESC close
   const esc = (e) => {
     if (e.key === "Escape") {
       window.removeEventListener("keydown", esc, true);
@@ -4332,13 +7203,11 @@ function renderHotkeyModal(){
       tag.textContent = codeToNiceLabel(noteHotkeys[noteId]);
       btn.appendChild(tag);
 
-      // click -> capture
       btn.addEventListener("click", () => {
         captureNoteId = noteId;
         renderHotkeyModal();
       });
 
-      // right click -> clear hotkey
       btn.addEventListener("contextmenu", (e) => {
         e.preventDefault();
         if (noteHotkeys[noteId]){
@@ -4414,7 +7283,7 @@ function tryHotkeySelectNote(e){
   if (e.ctrlKey || e.metaKey || e.altKey) return false;
 
   if (hotkeyModalOpen) return false;
-  if (typeof modalBack !== "undefined" && modalBack?.style?.display === "flex") return false; // gear modal
+  if (typeof modalBack !== "undefined" && modalBack?.style?.display === "flex") return false; 
 
   const code = e.code;
   if (!code) return false;
@@ -4448,6 +7317,243 @@ if (btnHotkeys){
   btnHotkeys.addEventListener("click", () => {
     openHotkeyModal();
   });
+}
+
+
+
+
+
+function rnGetPageCount(){
+  const w = state?.width || 0;
+  const pw = Math.max(1, Number(pageWidth) || 25);
+  return Math.max(1, Math.ceil(w / pw));
+}
+
+function rnClampPage(n){
+  const maxP = rnGetPageCount();
+  n = Math.floor(Number(n) || 1);
+  if (n < 1) n = 1;
+  if (n > maxP) n = maxP;
+  return n;
+}
+
+function rnRangeToCols(p0, p1){
+  const pw = Math.max(1, Number(pageWidth) || 25);
+  const a = rnClampPage(p0);
+  const b = rnClampPage(p1);
+  const lo = Math.min(a,b);
+  const hi = Math.max(a,b);
+  const x0 = (lo - 1) * pw;
+  const x1 = Math.min((hi * pw) - 1, (state.width - 1));
+  return { lo, hi, x0, x1, pw };
+}
+
+let _rnRecalcTimer = null;
+
+function rnRenderModal(recalc=false){
+  if (!document.getElementById("replaceNoteBack")) return;
+  const back = document.getElementById("replaceNoteBack");
+  const modal = document.getElementById("replaceNoteModal");
+  if (!back || !modal) return;
+  back.classList.toggle("rnDark", isDarkUiTheme());
+
+  if (!rnValidNoteId(rnFromId)) rnFromId = (rnAllNoteIds()[0] ?? 1);
+  if (!rnValidNoteId(rnToId)) rnToId = rnFromId;
+
+  const ids = rnAllNoteIds();
+
+  const curPage = Math.floor((Number(songXOffset) || 0) / Math.max(1, Number(pageWidth) || 25)) + 1;
+  if (!rnPageFrom || rnPageFrom < 1) rnPageFrom = curPage;
+  if (!rnPageTo || rnPageTo < 1) rnPageTo = curPage;
+
+  rnPageFrom = rnClampPage(rnPageFrom);
+  rnPageTo = rnClampPage(rnPageTo);
+
+  const maxP = rnGetPageCount();
+  const { lo, hi, x0, x1, pw } = rnRangeToCols(rnPageFrom, rnPageTo);
+
+  const pickFrom = modal.querySelector("#rnPickFrom");
+  const pickTo   = modal.querySelector("#rnPickTo");
+  pickFrom.classList.toggle("active", rnActiveSide === "from");
+  pickTo.classList.toggle("active", rnActiveSide === "to");
+
+  const fromImg = modal.querySelector("#rnFromImg");
+  const toImg = modal.querySelector("#rnToImg");
+  fromImg.src = assetUrl(NOTE_PACK.notes[rnFromId].image);
+  toImg.src = assetUrl(NOTE_PACK.notes[rnToId].image);
+
+  modal.querySelector("#rnFromIdTxt").textContent = `ID: ${rnFromId}`;
+  modal.querySelector("#rnToIdTxt").textContent = `ID: ${rnToId}`;
+
+  const inp0 = modal.querySelector("#rnPageFrom");
+  const inp1 = modal.querySelector("#rnPageTo");
+  inp0.max = String(maxP);
+  inp1.max = String(maxP);
+  inp0.value = String(rnPageFrom);
+  inp1.value = String(rnPageTo);
+
+  modal.querySelector("#rnPagesInfo").textContent = `Total page: ${maxP}`;
+  modal.querySelector("#rnColsInfo").textContent = (x1 >= x0) ? `Affected column: ${x0+1}..${x1+1}` : `Affected column: -`;
+  const help = modal.querySelector("#rnRangeHelp");
+  if (help){
+    const ex1s = 1;
+    const ex1e = Math.min(pw, state.width);
+    const ex2s = ex1e + 1;
+    const ex2e = Math.min(ex2s + pw - 1, state.width);
+    let t = `1 page = ${pw} col. 1 = ${ex1s}–${ex1e}`;
+    if (ex2s <= state.width) t += `, 2 = ${ex2s}–${ex2e}`;
+    t += `, etc.`;
+    help.textContent = t;
+  }
+
+  const grid = modal.querySelector("#rnGrid");
+  if (!grid.dataset.built){
+    grid.innerHTML = "";
+    for (const id of ids){
+      const btn = document.createElement("div");
+      btn.className = "rnNoteBtn";
+      btn.dataset.id = String(id);
+
+      const img = document.createElement("img");
+      img.src = assetUrl(NOTE_PACK.notes[id].image);
+      img.loading = "lazy";
+      btn.appendChild(img);
+
+      btn.addEventListener("click", () => {
+        const nid = Number(btn.dataset.id);
+        if (!rnValidNoteId(nid)) return;
+        if (rnActiveSide === "from") rnFromId = nid;
+        else rnToId = nid;
+        rnSaveSettings();
+        rnRenderModal(true);
+      });
+
+      grid.appendChild(btn);
+    }
+    grid.dataset.built = "1";
+  }
+
+  for (const el of grid.querySelectorAll(".rnNoteBtn")){
+    const id = Number(el.dataset.id);
+    el.classList.toggle("from", id === rnFromId);
+    el.classList.toggle("to", id === rnToId);
+    el.classList.toggle("activeSide", (rnActiveSide === "from" && id === rnFromId) || (rnActiveSide === "to" && id === rnToId));
+  }
+
+  if (recalc){
+    if (_rnRecalcTimer) clearTimeout(_rnRecalcTimer);
+    _rnRecalcTimer = setTimeout(() => {
+      _rnRecalcTimer = null;
+      rnUpdateMatchInfo();
+    }, 30);
+  } else {
+    rnUpdateMatchInfo();
+  }
+}
+
+function rnUpdateMatchInfo(){
+  const modal = document.getElementById("replaceNoteModal");
+  if (!modal) return;
+  const { x0, x1 } = rnRangeToCols(rnPageFrom, rnPageTo);
+
+  let cnt = 0;
+  if (x1 >= x0 && rnFromId !== null && rnFromId !== undefined){
+    for (let y=0; y<state.height; y++){
+      for (let x=x0; x<=x1; x++){
+        const id = cellId(state.grid[y][x]);
+        if (id === rnFromId) cnt++;
+      }
+    }
+  }
+  modal.querySelector("#rnMatchInfo").textContent = `Number found: ${cnt}`;
+}
+
+function rnMakeCellForId(id){
+  if (id === state.audioGearID){
+    return {
+      id: state.audioGearID,
+      volume: 100,
+      gearData: new Uint8Array(AUDIOGEARSPACE * 2),
+    };
+  }
+  return id;
+}
+
+function rnDoReplace(){
+  rnPageFrom = rnClampPage(rnPageFrom);
+  rnPageTo = rnClampPage(rnPageTo);
+
+  if (!rnValidNoteId(rnFromId) || !rnValidNoteId(rnToId)){
+    showStatus("Replace: invalid note selection.");
+    return;
+  }
+  if (rnFromId === rnToId){
+    showStatus("Replace: FROM and TO are the same.");
+    return;
+  }
+
+  const { lo, hi, x0, x1 } = rnRangeToCols(rnPageFrom, rnPageTo);
+  if (x1 < x0){
+    showStatus("Replace: invalid range.");
+    return;
+  }
+
+  const changes = [];
+  for (let y=0; y<state.height; y++){
+    for (let x=x0; x<=x1; x++){
+      const before = state.grid[y][x];
+      const id = cellId(before);
+      if (id !== rnFromId) continue;
+
+      const after = rnMakeCellForId(rnToId);
+      changes.push({ x, y, before, after });
+      applyCell(x, y, after);
+    }
+  }
+
+  if (changes.length === 0){
+    showStatus("Replace: no matches in that range.");
+    rnUpdateMatchInfo();
+    return;
+  }
+
+  pushHistoryMulti(changes);
+  refreshMaxX();
+  draw();
+
+  showStatus(`Replaced ${changes.length} cell(s) on pages ${lo}..${hi}.`);
+  rnUpdateMatchInfo();
+}
+
+function openReplaceNoteModal(){
+  rnEnsureModal();
+  rnLoadSettings();
+
+  if (typeof selectedNote === "number" && rnValidNoteId(selectedNote)){
+    if (!rnValidNoteId(rnFromId)) rnFromId = selectedNote;
+    if (!rnValidNoteId(rnToId)) rnToId = selectedNote;
+  }
+
+  const curPage = Math.floor((Number(songXOffset) || 0) / Math.max(1, Number(pageWidth) || 25)) + 1;
+  if (!rnPageFrom) rnPageFrom = curPage;
+  if (!rnPageTo) rnPageTo = curPage;
+
+  rnPageFrom = rnClampPage(rnPageFrom);
+  rnPageTo = rnClampPage(rnPageTo);
+
+  const back = document.getElementById("replaceNoteBack");
+  back.style.display = "flex";
+  replaceNoteModalOpen = true;
+  kmModalLock();
+  rnRenderModal(true);
+}
+
+function closeReplaceNoteModal(){
+  const back = document.getElementById("replaceNoteBack");
+  if (!back || back.style.display !== "flex") return;
+  back.style.display = "none";
+  replaceNoteModalOpen = false;
+  kmModalUnlock();
 }
 
 
@@ -4630,9 +7736,6 @@ gearVolTextEl.addEventListener("click", async () => {
   showGearToast(ok ? `✅ Copied Volume (${vol})` : "❌ Copy failed");
 });
 
-/* =======================
-   Gear editor
-   ======================= */
 function allowedInGear(noteId) {
   if (noteId === 0) return true;
   return NOTE_PACK.gearInfo[noteId]?.letter ? true : false;
@@ -4859,13 +7962,19 @@ function openGearEditor(cellObj, ax, y) {
   buildGearPalette(selectedNote);
 
   modalBack.style.display = "flex";
+  kmModalLock();
   drawGear();
   updateGearReadout();
   if (gearCodeInput) gearCodeInput.value = (gearCodeEl.textContent || "").trim();
 }
 
 function closeGearEditor() {
-  modalBack.style.display = "none";
+  if (modalBack.style.display === "flex") {
+    modalBack.style.display = "none";
+    kmModalUnlock();
+  } else {
+    modalBack.style.display = "none";
+  }
   gearEditingCell = null;
   gearEditingPos = null;
 }
@@ -4977,31 +8086,26 @@ gearDone.onclick = () => {
 
 gearCancel.onclick = () => closeGearEditor();
 
-/* ==============================
-   MAIN CANVAS INPUT
-   ============================== */
-
 cv.addEventListener("pointerdown", async (e) => {
   cv.setPointerCapture(e.pointerId);
 
   if (modalBack.style.display === "flex") return;
 
-  const hit = getCanvasTileFromEvent(e, cv, pageWidth, state.height, TILE);
+  const hit = getCanvasTileFromEvent(e, cv, pageWidth, state.height, TILE, LABEL_WIDTH);
   if (!hit) return;
 
   const ax = hit.x + songXOffset;
   const y = hit.y;
   const isRight = (e.button === 2);
 
-
-if (!isRight && !selectionMode && audioConvertOn && selectedNote === state.audioGearID) {
-  const cell = state.grid[y][ax];
-  const nid = cellId(cell);
-  if (nid && nid !== state.audioGearID && noteAllowedInAudioGear(nid)) {
-    audioConvertArmHold(ax, y, nid, e);
-    return;
+  if (!isRight && !selectionMode && audioConvertOn && selectedNote === state.audioGearID) {
+    const cell = state.grid[y][ax];
+    const nid = cellId(cell);
+    if (nid && nid !== state.audioGearID && noteAllowedInAudioGear(nid)) {
+      audioConvertArmHold(ax, y, nid, e);
+      return;
+    }
   }
-}
 
   if (selectionMode) {
     if (isRight) {
@@ -5020,8 +8124,17 @@ if (!isRight && !selectionMode && audioConvertOn && selectedNote === state.audio
     }
 
     isSelecting = true;
-    sel.x1 = ax; sel.y1 = y;
-    sel.x2 = ax; sel.y2 = y;
+
+    if (e.shiftKey && hasSelection() && selAnchorX !== -1 && selAnchorY !== -1) {
+      sel.x1 = selAnchorX; sel.y1 = selAnchorY;
+      sel.x2 = ax; sel.y2 = y;
+    } else {
+      selAnchorX = ax;
+      selAnchorY = y;
+      sel.x1 = ax; sel.y1 = y;
+      sel.x2 = ax; sel.y2 = y;
+    }
+
     draw();
     return;
   }
@@ -5046,27 +8159,31 @@ if (!isRight && !selectionMode && audioConvertOn && selectedNote === state.audio
 cv.addEventListener("pointermove", async (e) => {
   if (modalBack.style.display === "flex") return;
 
-  const hit = getCanvasTileFromEvent(e, cv, pageWidth, state.height, TILE);
+  const hit = getCanvasTileFromEvent(e, cv, pageWidth, state.height, TILE, LABEL_WIDTH);
   if (!hit) return;
 
-  const ax = hit.x + songXOffset;
+  let ax = hit.x + songXOffset;
   const y = hit.y;
 
-// Audio Convert
-if (_acHold && _acHold.pointerId === e.pointerId) {
-  const dx = Math.abs(e.clientX - _acHold.clientX);
-  const dy = Math.abs(e.clientY - _acHold.clientY);
-  if (dx > AUDIO_CONVERT_MOVE_PX || dy > AUDIO_CONVERT_MOVE_PX) {
-    audioConvertCancelHold();
-    beginPaintSession();
-    paintButtonRight = false;
-    await paintAt(ax, y, false, !paintStarted);
-    draw();
+  if (_acHold && _acHold.pointerId === e.pointerId) {
+    const dx = Math.abs(e.clientX - _acHold.clientX);
+    const dy = Math.abs(e.clientY - _acHold.clientY);
+    if (dx > AUDIO_CONVERT_MOVE_PX || dy > AUDIO_CONVERT_MOVE_PX) {
+      audioConvertCancelHold();
+      beginPaintSession();
+      paintButtonRight = false;
+      await paintAt(ax, y, false, !paintStarted);
+      draw();
+    }
+    return;
   }
-  return;
-}
 
   if (selectionMode) {
+
+    selectionAutoPageScrollIfNeeded(e);
+
+    ax = hit.x + songXOffset;
+
     if (isSelecting) {
       sel.x2 = ax;
       sel.y2 = y;
@@ -5102,19 +8219,17 @@ if (_acHold && _acHold.pointerId === e.pointerId) {
 cv.addEventListener("pointerup", () => {
   if (modalBack.style.display === "flex") return;
 
+  if (_acHold) {
+    const h = _acHold;
+    audioConvertCancelHold();
 
-if (_acHold) {
-  const h = _acHold;
-  audioConvertCancelHold();
-
-  beginPaintSession();
-  paintButtonRight = false;
-  paintAt(h.ax, h.y, false, true);
-  draw();
-  endPaintSession();
-  return;
-}
-
+    beginPaintSession();
+    paintButtonRight = false;
+    paintAt(h.ax, h.y, false, true);
+    draw();
+    endPaintSession();
+    return;
+  }
 
   if (selectionMode) {
     if (isSelecting) {
@@ -5139,7 +8254,7 @@ cv.addEventListener("pointercancel", () => {
 
 cv.addEventListener("contextmenu", e => e.preventDefault());
 
-// ===== buttons =====
+
 btnPrevPage.onclick = pageLeft;
 btnNextPage.onclick = pageRight;
 if (btnZoom) {
@@ -5147,7 +8262,6 @@ if (btnZoom) {
   btnZoom.onclick = () => applyZoom(!zoomOn);
 }
 
-// Theme button (cycles canvas themes)
 ensureThemeButton();
 if (btnTheme) {
   btnTheme.type = "button";
@@ -5172,6 +8286,13 @@ btnExport.onclick = async () => {
   try { await exportAsManual(); }
   catch (err) { alert(String(err)); }
 };
+
+if (btnExportMidi) {
+  btnExportMidi.onclick = async () => {
+    try { await exportAsMidi(); }
+    catch (err) { alert(String(err)); }
+  };
+}
 
 if (btnExportWav) {
   btnExportWav.onclick = async () => {
@@ -5198,7 +8319,6 @@ if (btnUndo) btnUndo.onclick = () => undo();
 if (btnRedo) btnRedo.onclick = () => redo();
 if (btnReset) btnReset.onclick = () => resetSongCanvas();
 
-// Selection buttons
 if (btnSelToggle) {
   btnSelToggle.onclick = () => {
     selectionMode = !selectionMode;
@@ -5214,6 +8334,7 @@ if (btnSelToggle) {
 }
 
 if (btnSelCopy) btnSelCopy.onclick = () => copySelectionToClipboard();
+if (btnSelCut) btnSelCut.onclick = () => cutSelectionToClipboard();
 if (btnSelPaste) btnSelPaste.onclick = () => armPaste();
 
 function applyImportedSong(parsed, displayName = "Library Song") {
@@ -5227,12 +8348,10 @@ function applyImportedSong(parsed, displayName = "Library Song") {
     grid: parsed.grid
   };
 
-  // reset repeat + maxX
   repeatUsed = Array.from({ length: state.height }, () => Array(state.width).fill(false));
   refreshMaxX();
   resetPlayState();
 
-  // reset transport
   playing = false;
   paused = false;
   clearInterval(timer);
@@ -5304,7 +8423,6 @@ inpMeta.oninput = () => {
   scheduleAutosave();
 };
 
-// ===== transport buttons =====
 function findFirstNonEmptyX() {
   for (let x = 0; x < state.width; x++) {
     if (columnHasAnyNote(x)) return x;
@@ -5324,7 +8442,7 @@ btnPlay.onclick = async () => {
   showStatus("Loading samples…", 2000);
   await warmUpAudioAround(startX, 60);
   await warmUpUsedSamples();
-  startFromFirstNote();
+  await startFromFirstNote();
 };
 
 
@@ -5337,16 +8455,78 @@ btnPause.onclick = async () => {
   }
 
   if (paused) {
-    resumeFromCurrentView();
+    await resumeFromCurrentView();
     return;
   }
 
   if (songXOffset > 0) {
-    startFromCurrentView();
+    await startFromCurrentView();
   }
 };
 
-// ===== hotkeys =====
+function kmApplySpaceButtonTheme() {
+  if (document.getElementById("km-space-btn-style")) return;
+
+  const st = document.createElement("style");
+  st.id = "km-space-btn-style";
+  st.textContent = `
+    #btnExport, #btnImport, #btnLength{
+      appearance:none;
+      border: 1px solid rgba(255,255,255,.16);
+      background:
+        radial-gradient(420px 220px at 20% 20%, rgba(120,64,255,.22), transparent 55%),
+        radial-gradient(420px 220px at 80% 30%, rgba(0,204,255,.18), transparent 55%),
+        rgba(255,255,255,.06);
+      color: rgba(240,244,255,.92);
+      border-radius: 14px;
+      padding: 10px 12px;
+      font-weight: 900;
+      letter-spacing: .2px;
+      cursor: pointer;
+      box-shadow: 0 10px 40px rgba(0,0,0,.35);
+      transition: transform .12s ease, box-shadow .12s ease, border-color .12s ease, background .12s ease;
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+    }
+
+    #btnExport:hover, #btnImport:hover, #btnLength:hover{
+      transform: translateY(-1px);
+      border-color: rgba(0,204,255,.35);
+      box-shadow: 0 14px 60px rgba(0,0,0,.45);
+    }
+
+    #btnExport:active, #btnImport:active, #btnLength:active{
+      transform: translateY(0px) scale(.99);
+      box-shadow: 0 10px 36px rgba(0,0,0,.38);
+    }
+
+    #btnExport:focus-visible, #btnImport:focus-visible, #btnLength:focus-visible{
+      outline: none;
+      box-shadow: 0 0 0 3px rgba(0,204,255,.22), 0 14px 60px rgba(0,0,0,.45);
+      border-color: rgba(0,204,255,.45);
+    }
+
+    #btnExport{
+      border-color: rgba(0,204,255,.30);
+      background:
+        radial-gradient(420px 220px at 20% 20%, rgba(120,64,255,.24), transparent 55%),
+        radial-gradient(420px 220px at 80% 30%, rgba(0,204,255,.22), transparent 55%),
+        rgba(0,204,255,.10);
+    }
+
+    @media (max-width: 520px){
+      #btnExport, #btnImport, #btnLength{
+        padding: 9px 10px;
+        border-radius: 12px;
+        font-weight: 900;
+      }
+    }
+  `;
+  document.head.appendChild(st);
+}
+
+kmApplySpaceButtonTheme();
+
 window.addEventListener("keydown", async (e) => {
   const tag = document.activeElement?.tagName?.toLowerCase();
   if (tag === "input") return;
@@ -5680,9 +8860,67 @@ File: ${it.file}
 }
 
 
-// ===== init =====
+
+function ensureSpaceScrollbars(){
+  const id = "km-space-scrollbar-style";
+  if (document.getElementById(id)) return;
+
+  const st = document.createElement("style");
+  st.id = id;
+  st.textContent = `
+    :root{
+      scrollbar-width: thin;
+    }
+
+    html[data-ui-theme="dark"]{
+      scrollbar-color: rgba(0,204,255,.55) rgba(8,10,24,.55);
+    }
+    html[data-ui-theme="light"]{
+      scrollbar-color: rgba(120,64,255,.55) rgba(255,255,255,.75);
+    }
+
+    ::-webkit-scrollbar{
+      width: 10px;
+      height: 10px;
+    }
+
+    ::-webkit-scrollbar-track{
+      background: rgba(8,10,24,.55);
+      border-radius: 999px;
+    }
+    html[data-ui-theme="light"] ::-webkit-scrollbar-track{
+      background: rgba(255,255,255,.78);
+      border: 1px solid rgba(0,0,0,.10);
+    }
+
+    ::-webkit-scrollbar-thumb{
+      background: linear-gradient(180deg, rgba(0,204,255,.60), rgba(120,64,255,.55));
+      border-radius: 999px;
+      border: 2px solid rgba(8,10,24,.55);
+    }
+    html[data-ui-theme="light"] ::-webkit-scrollbar-thumb{
+      background: linear-gradient(180deg, rgba(120,64,255,.55), rgba(0,204,255,.50));
+      border: 2px solid rgba(255,255,255,.78);
+    }
+
+    ::-webkit-scrollbar-thumb:hover{
+      background: linear-gradient(180deg, rgba(0,204,255,.80), rgba(255,80,190,.55));
+    }
+    html[data-ui-theme="light"] ::-webkit-scrollbar-thumb:hover{
+      background: linear-gradient(180deg, rgba(120,64,255,.70), rgba(255,80,190,.42));
+    }
+
+    ::-webkit-scrollbar-corner{
+      background: transparent;
+    }
+  `;
+  document.head.appendChild(st);
+}
+
 (async function init() {
   await buildPalette();
+
+  ensureSpaceScrollbars();
 
   resizeGearCanvas();
 
