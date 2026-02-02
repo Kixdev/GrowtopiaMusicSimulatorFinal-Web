@@ -61,8 +61,8 @@ export function writeGmsfV1(state) {
   if (metaBytes.length > 255) throw new Error("Metadata too long (max 255 bytes)");
 
   let size = 0;
-  size += 4 + 1 + 1;     // GMSF + ver + audioGearID
-  size += 2 + 2 + 2;     // bpm + width + height
+  size += 4 + 1 + 1;     
+  size += 2 + 2 + 2;    
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
@@ -73,8 +73,8 @@ export function writeGmsfV1(state) {
     }
   }
 
-  size += 4 + 1 + metaBytes.length; // META + len + bytes
-  size += 4;                        // FSMG
+  size += 4 + 1 + metaBytes.length; 
+  size += 4;                        
 
   const buf = new ArrayBuffer(size);
   const u8 = new Uint8Array(buf);
@@ -122,4 +122,3 @@ export function download(bytes, filename = "song.GMSF") {
   a.click();
   URL.revokeObjectURL(url);
 }
-
